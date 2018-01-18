@@ -6,7 +6,7 @@
 //                               signal handler self-hack
 
 // Student name: Mykola Gryshko
-// Ilab machine used:
+// Ilab machine used: vi.cs.rutgers.edu
 
 #include <signal.h>
 #include <stdio.h>
@@ -14,18 +14,11 @@
 
 void segment_fault_handler(int signum)
 {
-	//printf("I am slain!\n");
+	printf("I am slain!\n");
 
-	void * p =(void *) &signum;
-
-	p += 0x0000003C; //Increment pointer down to the stored PC
-	*(int *)p += 0x6; //Increment value at pointer by length of bad instruction
-
-	//Use the signnum to construct a pointer to flag on stored stack
-	//Increment pointer down to the stored PC
-	//Increment value at pointer by length of bad instruction
-
-
+	void * signumPtr =(void *) &signum;
+	signumPtr += 0x0000003C;
+	*(int *)signumPtr += 0x00000006;
 
 }
 
