@@ -16,6 +16,8 @@ void segment_fault_handler(int signum)
 {
 	printf("I am slain!\n");
 
+	//   *(((int*)&signum)+0) += 0;
+
 	void * signumPtr =(void *) &signum;
 	signumPtr += 0x0000003C;
 	*(int *)signumPtr += 0x00000006;
