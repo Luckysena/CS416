@@ -7,20 +7,51 @@
 // iLab Server: vi.cs.rutgers.edu
 
 #include "my_pthread_t.h"
+#define MEM 64000
+int is_scheduler_init = 0;
 
 
-int main(int argc, char* argv){
-		/* scheduler will be main. Things to add:
-		     1) timer
-				 2) running and waiting queue
-				 3) interrupt handler
+void init_scheduler(){
+	/*
+	Need to initialize the queues & mutexes, set mode bit, start clock
+	*/
+	Scheduler = malloc(sizeof(scheduler));
+	mode_bit = 0;
+	is_scheduler_init = 1;
 
-			Or the alternative is to not have a main and make scheduler 
+	// context init
+	getcontext(Scheduler->context);
+	Scheduler->context->uc_link = 0; //this needs to be running program's main
+	Scheduler->context->uc_stack.ss_sp = malloc(MEM);
+	Scheduler->context->uc_stack.ss_size = MEM;
+	Scheduler->context->uc_stack.ss_flags = 0;
 
-		*/
+	makecontext(Scheduler->context,(void*)&init_timer,NULL);
+	return;
 }
 
+void init_timer(){
+	// timer init
+	memset(&sa,0,sizeof(sa));
+	sa.sa_handler = &clock_interrupt_handler;
+	sigaction(SIGVTALRM, &sa, NULL);
 
+	// config timer to set off every 25 ms
+	timer.it_value.tv_sec = 0;
+	timer.it_value.tv_usec = 25000;
+	timer.it_interval.tv_sec = 0;
+	timer.it_interval.tv_usec = 25000;
+
+	setitimer(ITIMER_VIRTUAL, &timer, NULL);
+
+	return;
+}
+
+void clock_interrupt_handler(){
+	/*
+	Need to yield whatever thread we're on and give control to scheduler
+	*/
+}
 
 
 /* create a new thread */

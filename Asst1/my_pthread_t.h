@@ -14,9 +14,12 @@
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ucontext.h>
+#include <signal.h>
+#include <string.h>
 
 typedef uint my_pthread_t;
 
@@ -26,19 +29,49 @@ typedef struct threadControlBlock {
 	int runTime;
 	int priority;
 	my_pthread_t tid;
+ 	struct threadControlBlock * next;
 } tcb;
+
 
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t {
 	/* add something here */
 } my_pthread_mutex_t;
 
+
+typedef struct _queue{
+	/* temporary simple FIFO queue */
+	tcb * head;
+	tcb * end;
+} queue;
+
+
+typedef struct _scheduler{
+	ucontext_t *context;
+	int state;
+	queue runQ;
+	queue waitQ;
+}scheduler;
+
+
+
+
 /* define your data structures here: */
-tcb * scheduler;
-struct itimerval timer;
+scheduler * Scheduler;
 int mode_bit;
+struct itimerval timer;
+struct sigaction sa;
 
 /* Function Declarations: */
+
+/* timer init */
+void init_timer();
+
+/* init for scheduler */
+void init_scheduler();
+
+/* clock handler */
+void clock_interrupt_handler();
 
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg);
