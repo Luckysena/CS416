@@ -2,11 +2,26 @@
 // Author:	Yujie REN
 // Date:	09/23/2017
 
-// name:
-// username of iLab:
-// iLab Server:
+// name: Mykola Gryshko
+// username of iLab: mg1250
+// iLab Server: vi.cs.rutgers.edu
 
 #include "my_pthread_t.h"
+
+
+int main(int argc, char* argv){
+		/* scheduler will be main. Things to add:
+		     1) timer
+				 2) running and waiting queue
+				 3) interrupt handler
+
+			Or the alternative is to not have a main and make scheduler 
+
+		*/
+}
+
+
+
 
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
@@ -46,4 +61,3 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex) {
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex) {
 	return 0;
 };
-

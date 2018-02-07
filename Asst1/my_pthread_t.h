@@ -2,9 +2,9 @@
 // Author:	Yujie REN
 // Date:	09/23/2017
 
-// name:
-// username of iLab:
-// iLab Server: 
+// name: Mykola Gryshko
+// username of iLab: mg1250
+// iLab Server: vi.cs.rutgers.edu
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
 
@@ -16,12 +16,17 @@
 #include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ucontext.h>
 
 typedef uint my_pthread_t;
 
 typedef struct threadControlBlock {
-	/* add something here */
-} tcb; 
+	ucontext_t *context;
+	int state; //0 is ready, 1 is running, 2 is waiting, 3 is terminating
+	int runTime;
+	int priority;
+	my_pthread_t tid;
+} tcb;
 
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t {
@@ -29,9 +34,9 @@ typedef struct my_pthread_mutex_t {
 } my_pthread_mutex_t;
 
 /* define your data structures here: */
-
-// Feel free to add your own auxiliary data structures
-
+tcb * scheduler;
+struct itimerval timer;
+int mode_bit;
 
 /* Function Declarations: */
 
