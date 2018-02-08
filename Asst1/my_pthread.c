@@ -13,44 +13,37 @@ int is_scheduler_init = 0;
 
 void init_scheduler(){
 	/*
-	Need to initialize the queues & mutexes, set mode bit, start clock
+	Need to initialize the queues & mutexes, set mode bit
 	*/
-	Scheduler = malloc(sizeof(scheduler));
+	Scheduler = (scheduler*)malloc(sizeof(scheduler));
+	Scheduler->runQ = (queue*)malloc(sizeof(queue));
+	Scheduler->waitQ = (queue*)malloc(sizeof(queue));
 	mode_bit = 0;
 	is_scheduler_init = 1;
 
-	// context init
+	// context init, change this to main context
 	getcontext(Scheduler->context);
 	Scheduler->context->uc_link = 0; //this needs to be running program's main
 	Scheduler->context->uc_stack.ss_sp = malloc(MEM);
 	Scheduler->context->uc_stack.ss_size = MEM;
 	Scheduler->context->uc_stack.ss_flags = 0;
 
-	makecontext(Scheduler->context,(void*)&init_timer,NULL);
-	return;
-}
 
-void init_timer(){
 	// timer init
-	memset(&sa,0,sizeof(sa));
-	sa.sa_handler = &clock_interrupt_handler;
-	sigaction(SIGVTALRM, &sa, NULL);
-
-	// config timer to set off every 25 ms
-	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = 25000;
-	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = 25000;
-
-	setitimer(ITIMER_VIRTUAL, &timer, NULL);
-
+	signal(SIGVTALRM,clock_interrupt_handler);
 	return;
 }
 
 void clock_interrupt_handler(){
-	/*
-	Need to yield whatever thread we're on and give control to scheduler
-	*/
+
+		// config timer to set off every 25 ms
+		timer.it_value.tv_sec = 0;
+		timer.it_value.tv_usec = 25000;
+		timer.it_interval.tv_sec = 0;
+		timer.it_interval.tv_usec = 25000;
+
+		setitimer(ITIMER_VIRTUAL, &timer, NULL);
+
 }
 
 

@@ -23,9 +23,13 @@
 
 typedef uint my_pthread_t;
 
+typedef enum state{
+	READY, RUNNING, WAITING, TERMINATED, NEW
+}state;
+
 typedef struct threadControlBlock {
 	ucontext_t *context;
-	int state; //0 is ready, 1 is running, 2 is waiting, 3 is terminating
+	state status;
 	int runTime;
 	int priority;
 	my_pthread_t tid;
@@ -43,14 +47,16 @@ typedef struct _queue{
 	/* temporary simple FIFO queue */
 	tcb * head;
 	tcb * end;
+	int num_threads;
 } queue;
 
 
 typedef struct _scheduler{
-	ucontext_t *context;
+	tcb *runningContext;
+	tcb *mainContext;
 	int state;
-	queue runQ;
-	queue waitQ;
+	queue * runQ;
+	queue * waitQ;
 }scheduler;
 
 
@@ -60,7 +66,6 @@ typedef struct _scheduler{
 scheduler * Scheduler;
 int mode_bit;
 struct itimerval timer;
-struct sigaction sa;
 
 /* Function Declarations: */
 
