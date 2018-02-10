@@ -23,15 +23,19 @@
 
 typedef uint my_pthread_t;
 
-typedef enum state{
+typedef enum _state{
 	READY, RUNNING, WAITING, TERMINATED, NEW
 }state;
+
+typedef enum _priority{
+	LOW, MED, HIGH
+}Priority;
 
 typedef struct threadControlBlock {
 	ucontext_t *context;
 	state status;
-	int runTime;
-	int priority;
+	int runCount;
+	Priority priority;
 	my_pthread_t tid;
  	struct threadControlBlock * next;
 } tcb;
@@ -46,17 +50,24 @@ typedef struct my_pthread_mutex_t {
 typedef struct _queue{
 	/* temporary simple FIFO queue */
 	tcb * head;
-	tcb * end;
+	tcb * tail;
 	int num_threads;
 } queue;
 
+typedef struct _MLPQ{
+	queue L1;
+	queue L2;
+	queue L3;
+}MLPQ;
+
 
 typedef struct _scheduler{
+	ucontext_t *context;
 	tcb *runningContext;
 	tcb *mainContext;
-	int state;
 	queue * runQ;
 	queue * waitQ;
+	MLPQ * tasklist;
 }scheduler;
 
 
@@ -64,10 +75,11 @@ typedef struct _scheduler{
 
 /* define your data structures here: */
 scheduler * Scheduler;
-int mode_bit;
 struct itimerval timer;
 
+
 /* Function Declarations: */
+void schedulerfn();
 
 /* timer init */
 void init_timer();
