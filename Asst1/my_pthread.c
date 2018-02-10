@@ -151,14 +151,16 @@ void clock_interrupt_handler(){
 		timer.it_value.tv_usec = 0;
 		setitimer(ITIMER_VIRTUAL, &timer, NULL);
 
+		//handle old thread here then swap context to scheduler
 		tcb* old_thread = Scheduler->runningContext;
 		old_thread->runCount++;
 
 }
 
 void schedulerfn(){
+	//run this bitch forever
 	while(1){
-		//run this bitch forever
+		//first check if runQ is empty, if its not then run the next thread in it
 		if(!QisEmpty(Scheduler->runQ)){
 			timer.it_value.tv_sec = 0;
 			timer.it_value.tv_usec = 25000;
@@ -166,6 +168,11 @@ void schedulerfn(){
 			timer.it_interval.tv_usec = 25000;
 			setitimer(ITIMER_VIRTUAL, &timer, NULL);
 		}
+		//after runQ is empty, need to do maintence and select new threads from MLPQ
+
+
+
+		//then reset timer and swap context to first in runQ
 
 	}
 }
