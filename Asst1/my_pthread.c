@@ -8,6 +8,7 @@
 
 #include "my_pthread_t.h"
 #define MEM 64000
+#define QUANTA 25000
 int is_scheduler_init = 0;
 my_pthread_t tcbIDs[32];
 
@@ -21,7 +22,7 @@ tcb* initTCB(){
 
 	tcb* newTCB = (tcb*)malloc(sizeof(tcb));
 	getcontext(newTCB->context);   //may need to init stack and flags
-	newTCB->context->uc_link = Scheduler->context;  //go to scheduler's context upon completion
+	newTCB->context->uc_link = 0;  //should go to scheduler upon completion, need to work on it
 	newTCB->context->uc_stack.ss_sp = malloc(MEM);
 	newTCB->context->uc_stack.ss_size = MEM;
 	newTCB->context->uc_stack.ss_flags = 0;
@@ -98,20 +99,23 @@ tcb* dequeue(queue* qq){
 
 MLPQ* initTasklist(){
 	MLPQ* newMLPQ = (MLPQ*)malloc(sizeof(MLPQ));
-	newMLPQ->L1.num_threads = 0;
-	newMLPQ->L2.num_threads = 0;
-	newMLPQ->L3.num_threads = 0;
-	newMLPQ->L1.head = NULL;
-	newMLPQ->L1.tail = NULL;
-	newMLPQ->L2.head = NULL;
-	newMLPQ->L2.tail = NULL;
-	newMLPQ->L3.head = NULL;
-	newMLPQ->L3.tail = NULL;
+	newMLPQ->L1 = (queue*)malloc(sizeof(queue));
+	newMLPQ->L2 = (queue*)malloc(sizeof(queue));
+	newMLPQ->L3 = (queue*)malloc(sizeof(queue));
+	newMLPQ->L1->num_threads = 0;
+	newMLPQ->L2->num_threads = 0;
+	newMLPQ->L3->num_threads = 0;
+	newMLPQ->L1->head = NULL;
+	newMLPQ->L1->tail = NULL;
+	newMLPQ->L2->head = NULL;
+	newMLPQ->L2->tail = NULL;
+	newMLPQ->L3->head = NULL;
+	newMLPQ->L3->tail = NULL;
 }
 
 void init_scheduler(){
 	/*
-	Need to initialize the queues & mutexes, set mode bit
+	Need to initialize the queues & mutexes
 	*/
 
 
@@ -120,9 +124,10 @@ void init_scheduler(){
 	Scheduler->runQ = initQ();
 	Scheduler->waitQ = initQ();
 	Scheduler->tasklist = initTasklist();
+	Scheduler->runCount = 0;
 	is_scheduler_init = 1;
 
-	// context for scheduler, might be unneeded tbh
+	// context for scheduler
 	getcontext(Scheduler->context);
 	Scheduler->context->uc_link = 0; //replace with cleanup program later
 	Scheduler->context->uc_stack.ss_sp = malloc(MEM);
@@ -136,12 +141,16 @@ void init_scheduler(){
 	// timer init
 	signal(SIGVTALRM,clock_interrupt_handler);
 	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = 25000;
+	timer.it_value.tv_usec = QUANTA;
 	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = 25000;
+	timer.it_interval.tv_usec = QUANTA;
 
 	setitimer(ITIMER_VIRTUAL, &timer, NULL);
 	return;
+}
+
+void maintence(){
+	// here we will clean up terminated threads from terminated Q and reorganize the threads in MLPQ
 }
 
 void clock_interrupt_handler(){
@@ -151,24 +160,33 @@ void clock_interrupt_handler(){
 		timer.it_value.tv_usec = 0;
 		setitimer(ITIMER_VIRTUAL, &timer, NULL);
 
-		//handle old thread here then swap context to scheduler
-		tcb* old_thread = Scheduler->runningContext;
-		old_thread->runCount++;
+		//establish that clock stopped this thread and that it didnt yield explicitly
+		tcb* current_thread = Scheduler->runningContext;
+		current_thread->status = INTERRUPTED;
+
+		//call yield to handle the thread and run next item
+		my_pthread_yield();
 
 }
 
 void schedulerfn(){
-	//run this bitch forever
+	//run this forever
 	while(1){
-		//first check if runQ is empty, if its not then run the next thread in it
-		if(!QisEmpty(Scheduler->runQ)){
-			timer.it_value.tv_sec = 0;
-			timer.it_value.tv_usec = 25000;
-			timer.it_interval.tv_sec = 0;
-			timer.it_interval.tv_usec = 25000;
-			setitimer(ITIMER_VIRTUAL, &timer, NULL);
+
+		//maintence counter
+		Scheduler->runCount++;
+		if(Scheduler->runCount >= 10){
+			maintence();
 		}
-		//after runQ is empty, need to do maintence and select new threads from MLPQ
+
+
+		//this should always occur, runQ will be empty and we swap to scheduler to run its maintence
+		if(QisEmpty(Scheduler->runQ)){
+			/* Here we will select the next runQ from the MLPQ
+			   I(Mykola) think we should choose up to 50 QUANTA
+				 for the runQ, we can readjust as needed */
+
+		}
 
 
 
@@ -178,11 +196,72 @@ void schedulerfn(){
 }
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
+	tcb * newTCB = initTCB();
+	// gotta add the function and arguments to the newTCB and then add it to queue L1
 	return 0;
 };
 
 /* give CPU pocession to other user level threads voluntarily */
 int my_pthread_yield() {
+	tcb* old_thread = Scheduler->runningContext;
+
+/* You should implement checking if the thread stopped due to a mutex lock wait here(by checking its status)
+and add it to the waiting queue for that particular mutex. this should be done first before we re-order it's spot in
+the tasklist since its being blocked */
+
+
+
+	//inc run count
+	old_thread->runCount++;
+
+	//change priority and enqueue it into MLPQ (tasklist) only if it didn't call yield explicitly
+	if(old_thread->status == INTERRUPTED){
+		if(old_thread->priority == HIGH){
+			old_thread->priority = MED;
+			enqueue(Scheduler->tasklist->L2,old_thread);
+		}
+		else if(old_thread->priority == MED){
+			old_thread->priority = LOW;
+			enqueue(Scheduler->tasklist->L3,old_thread);
+		}
+	}
+
+	//check if runQ is empty, if its not then run next item in it based on its priority
+	if(!QisEmpty(Scheduler->runQ)){
+		tcb* new_thread = dequeue(Scheduler->runQ);
+
+		if(new_thread->priority == HIGH){
+			timer.it_value.tv_sec = 0;
+			timer.it_value.tv_usec = QUANTA;
+			timer.it_interval.tv_sec = 0;
+			timer.it_interval.tv_usec = QUANTA;
+			setitimer(ITIMER_VIRTUAL, &timer, NULL);
+			swapcontext(old_thread->context,new_thread->context);
+		}
+
+		else if(new_thread->priority == MED){
+			timer.it_value.tv_sec = 0;
+			timer.it_value.tv_usec = 5*QUANTA;
+			timer.it_interval.tv_sec = 0;
+			timer.it_interval.tv_usec = 5*QUANTA;
+			setitimer(ITIMER_VIRTUAL, &timer, NULL);
+			swapcontext(old_thread->context,new_thread->context);
+		}
+
+		else if(new_thread->priority == LOW){
+		timer.it_value.tv_sec = 0;
+		timer.it_value.tv_usec = 10*QUANTA;
+		timer.it_interval.tv_sec = 0;
+		timer.it_interval.tv_usec = 10*QUANTA;
+		setitimer(ITIMER_VIRTUAL, &timer, NULL);
+		swapcontext(old_thread->context,new_thread->context);
+		}
+	}
+	//this is incase the runQ is finished, then we swap to scheduler
+	else{
+		swapcontext(old_thread->context,Scheduler->context);
+	}
+
 	return 0;
 };
 

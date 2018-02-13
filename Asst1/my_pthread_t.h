@@ -24,7 +24,7 @@
 typedef uint my_pthread_t;
 
 typedef enum _state{
-	READY, RUNNING, WAITING, TERMINATED, NEW
+	READY, RUNNING, WAITING, TERMINATED, NEW, INTERRUPTED
 }state;
 
 typedef enum _priority{
@@ -55,9 +55,9 @@ typedef struct _queue{
 } queue;
 
 typedef struct _MLPQ{
-	queue L1;
-	queue L2;
-	queue L3;
+	queue* L1;
+	queue* L2;
+	queue* L3;
 }MLPQ;
 
 
@@ -65,9 +65,11 @@ typedef struct _scheduler{
 	ucontext_t *context;
 	tcb *runningContext;
 	tcb *mainContext;
+	queue * terminatedQ;
 	queue * runQ;
 	queue * waitQ;
 	MLPQ * tasklist;
+	int runCount;
 }scheduler;
 
 
