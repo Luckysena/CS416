@@ -135,8 +135,8 @@ void init_scheduler(){
 	Scheduler->context->uc_stack.ss_flags = 0;
 	makecontext(Scheduler->context,(void*)&schedulerfn, 0); //set up scheduler function
 
-	// add main() to run queue
-	enqueue(Scheduler->runQ,Scheduler->mainContext);
+	// add main() to Level 1
+	enqueue(Scheduler->tasklist->L1,Scheduler->mainContext);
 
 	// timer init
 	signal(SIGVTALRM,clock_interrupt_handler);
@@ -166,11 +166,13 @@ void clock_interrupt_handler(){
 
 		//call yield to handle the thread and run next item
 		my_pthread_yield();
+		return;
 
 }
 
 void schedulerfn(){
 	//run this forever
+	int i;
 	while(1){
 
 		//maintence counter
@@ -183,8 +185,19 @@ void schedulerfn(){
 		//this should always occur, runQ will be empty and we swap to scheduler to run its maintence
 		if(QisEmpty(Scheduler->runQ)){
 			/* Here we will select the next runQ from the MLPQ
-			   I(Mykola) think we should choose up to 50 QUANTA
-				 for the runQ, we can readjust as needed */
+			   I(Mykola) think we should choose up to 60 QUANTA
+				 for the runQ, we can readjust as needed, up to 5 from L1, up to 5 from L2, up to 3 from L3 */
+
+				 //grab 5 if availbile
+				 if(Scheduler->tasklist->L1->num_threads >= 5){
+					 for(i = 0; i<5; i++){
+					 	enqueue(Scheduler->runQ, Scheduler->tasklist->L1->head);
+						}
+				 }
+				 //otherwise add as many as we can
+				 else{
+
+				 }
 
 		}
 
@@ -196,6 +209,11 @@ void schedulerfn(){
 }
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
+
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
+
 	tcb * newTCB = initTCB();
 	// gotta add the function and arguments to the newTCB and then add it to queue L1
 	return 0;
@@ -257,7 +275,7 @@ the tasklist since its being blocked */
 		swapcontext(old_thread->context,new_thread->context);
 		}
 	}
-	//this is incase the runQ is finished, then we swap to scheduler
+	//this is incase the runQ is finished, then we swap to scheduler to make a new one
 	else{
 		swapcontext(old_thread->context,Scheduler->context);
 	}
