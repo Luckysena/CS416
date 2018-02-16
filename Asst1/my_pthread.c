@@ -222,7 +222,7 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 /* give CPU pocession to other user level threads voluntarily */
 int my_pthread_yield() {
 	tcb* old_thread = Scheduler->runningContext;
-
+	
 /* You should implement checking if the thread stopped due to a mutex lock wait here(by checking its status)
 and add it to the waiting queue for that particular mutex. this should be done first before we re-order it's spot in
 the tasklist since its being blocked */
@@ -285,6 +285,13 @@ the tasklist since its being blocked */
 
 /* terminate a thread */
 void my_pthread_exit(void *value_ptr) {
+
+	tcb* old_thread = Scheduler->runningContext;
+	old_thread->status = TERMINATED;
+	enqueue(Scheduler->terminatedQ, old_thread);
+
+	//Here we would include if/else block in my_pthread_yield
+	//to swap context?
 };
 
 /* wait for thread termination */
