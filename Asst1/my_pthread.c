@@ -9,6 +9,20 @@
 #include "my_pthread_t.h"
 #define MEM 64000
 #define QUANTA 25000
+#define L1THREADS 5
+#define L2THREADS 5
+#define L3THREADS 3
+
+#define pthread_create my_pthread_create
+#define pthread_yield my_pthread_yield
+#define pthread_exit my_pthread_exit
+#define pthread_join my_pthread_join
+#define pthread_mutex_t my_pthread_mutex_t
+#define pthread_mutex_init my_pthread_mutex_init
+#define pthread_mutex_lock my_pthread_mutex_lock
+#define pthread_mutex_unlock my_pthread_mutex_unlock
+#define pthread_mutex_destroy my_pthread_mutex_destroy
+
 int is_scheduler_init = 0;
 my_pthread_t tcbIDs[32];
 
@@ -40,21 +54,24 @@ tcb* initTCB(){
 	return newTCB;
 }
 
-queue* initQ(){
+queue* initQ()
+{
 	queue* newQ = (queue*)malloc(sizeof(queue));
 	newQ->num_threads = 0;
 	newQ->head = NULL;
 	newQ->tail = NULL;
 }
 
-int QisEmpty(queue* qq){
+int QisEmpty(queue* qq)
+{
 	if(qq->num_threads==0){
 		return 1;
 	}
 	else return 0;
 }
 
-void enqueue(queue* qq,tcb* thread){
+void enqueue(queue* qq,tcb* thread)
+{
 	if (qq->num_threads == 0){
 		qq->head = thread;
 		qq->tail = thread;
@@ -72,8 +89,8 @@ void enqueue(queue* qq,tcb* thread){
 	}
 }
 
-tcb* dequeue(queue* qq){
-
+tcb* dequeue(queue* qq)
+{
 		tcb* tmp ;
 
 		if(qq->num_threads == 0){
@@ -151,6 +168,50 @@ void init_scheduler(){
 
 void maintence(){
 	// here we will clean up terminated threads from terminated Q and reorganize the threads in MLPQ
+
+	// Not sure how terminated threads should be handled. Feel free to change this approach if needed
+
+	// Put everything into temp_queue
+	int i;
+	queue* temp_queue = initQ();
+	for (i = 0; i < Scheduler->tasklist->L1->num_threads; i++)
+	{
+		enqueue(temp_queue, dequeue(Scheduler->tasklist->L1));
+	}
+	for (i = 0; i < Scheduler->tasklist->L2->num_threads; i++)
+	{
+		enqueue(temp_queue, dequeue(Scheduler->tasklist->L2));
+	}
+
+	for (i = 0; i < Scheduler->tasklist->L3->num_threads; i++)
+	{
+		enqueue(temp_queue, dequeue(Scheduler->tasklist->L3));
+	}
+
+	sort(temp_queue);
+
+	for(i = 0; i < L1THREADS; i++)
+	{
+	 	enqueue(Scheduler->tasklist->L1, dequeue(temp_queue));
+	}
+	for(i = 0; i < L2THREADS; i++)
+	{
+	 	enqueue(Scheduler->tasklist->L2, dequeue(temp_queue));
+	}
+	for(i = 0; i < temp_queue->num_threads; i++)
+	{
+	 	enqueue(Scheduler->tasklist->L3, dequeue(temp_queue));
+	}
+}
+
+void sort(queue* qq)
+{
+	if ((qq->head == NULL) || (qq->head->next == NULL))
+	{
+		return;
+	}
+
+	// 
 }
 
 void clock_interrupt_handler(){
@@ -173,7 +234,8 @@ void clock_interrupt_handler(){
 void schedulerfn(){
 	//run this forever
 	int i;
-	while(1){
+	while(1)
+	{
 
 		//maintence counter
 		Scheduler->runCount++;
@@ -188,22 +250,56 @@ void schedulerfn(){
 			   I(Mykola) think we should choose up to 60 QUANTA
 				 for the runQ, we can readjust as needed, up to 5 from L1, up to 5 from L2, up to 3 from L3 */
 
-				 //grab 5 if availbile
-				 if(Scheduler->tasklist->L1->num_threads >= 5){
-					 for(i = 0; i<5; i++){
+				 // Grab from L1
+				 if(Scheduler->tasklist->L1->num_threads >= L1THREADS)
+				 {
+					for(i = 0; i < L1THREADS; i++)
+					{
 					 	enqueue(Scheduler->runQ, Scheduler->tasklist->L1->head);
-						}
+					}
 				 }
-				 //otherwise add as many as we can
-				 else{
-
+				 else
+				 {
+				 	for (i = 0; i < Scheduler->tasklist->L1->num_threads; i++)
+				 	{
+				 		enqueue(Scheduler->runQ, Scheduler->tasklist->L1->head);
+				 	}
+				 }
+				 // Grab from L2
+				 if(Scheduler->tasklist->L2->num_threads >= L2THREADS)
+				 {
+					for(i = 0; i < L2THREADS; i++)
+					{
+					 	enqueue(Scheduler->runQ, Scheduler->tasklist->L2->head);
+					}
+				 }
+				 else
+				 {
+				 	for (i = 0; i < Scheduler->tasklist->L2->num_threads; i++)
+				 	{
+				 		enqueue(Scheduler->runQ, Scheduler->tasklist->L2->head);
+				 	}
+				 }
+				 // Grab from L3
+				 if(Scheduler->tasklist->L3->num_threads >= L3THREADS)
+				 {
+					for(i = 0; i < L3THREADS; i++)
+					{
+					 	enqueue(Scheduler->runQ, Scheduler->tasklist->L3->head);
+					}
+				 }
+				 else
+				 {
+				 	for (i = 0; i < Scheduler->tasklist->L3->num_threads; i++)
+				 	{
+				 		enqueue(Scheduler->runQ, Scheduler->tasklist->L3->head);
+				 	}
 				 }
 
 		}
 
-
-
 		//then reset timer and swap context to first in runQ
+		clock_interrupt_handler();
 
 	}
 }
@@ -215,7 +311,11 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 	}
 
 	tcb * newTCB = initTCB();
-	// gotta add the function and arguments to the newTCB and then add it to queue L1
+
+	// add the function and arguments to the newTCB and then add it to queue L1
+	makecontext(&(newTCB->context), (void*)function, 1, arg);
+	enqueue(Scheduler->tasklist->L1, newTCB);
+
 	return 0;
 };
 
@@ -224,23 +324,26 @@ int my_pthread_yield() {
 	tcb* old_thread = Scheduler->runningContext;
 	
 /* You should implement checking if the thread stopped due to a mutex lock wait here(by checking its status)
-and add it to the waiting queue for that particular mutex. this should be done first before we re-order it's spot in
+and add it to the waiting queue for that particular mutex. this should be done first before we re-order its spot in
 the tasklist since its being blocked */
 
+// I (Alex) have the mutex queueing implemented in the mutex functions, so I'll just have it skip over this block if waiting?
 
+	if (old_thread->status != WAITING)
+	{
+			//inc run count
+		old_thread->runCount++;
 
-	//inc run count
-	old_thread->runCount++;
-
-	//change priority and enqueue it into MLPQ (tasklist) only if it didn't call yield explicitly
-	if(old_thread->status == INTERRUPTED){
-		if(old_thread->priority == HIGH){
-			old_thread->priority = MED;
-			enqueue(Scheduler->tasklist->L2,old_thread);
-		}
-		else if(old_thread->priority == MED){
-			old_thread->priority = LOW;
-			enqueue(Scheduler->tasklist->L3,old_thread);
+		//change priority and enqueue it into MLPQ (tasklist) only if it didn't call yield explicitly
+		if(old_thread->status == INTERRUPTED){
+			if(old_thread->priority == HIGH){
+				old_thread->priority = MED;
+				enqueue(Scheduler->tasklist->L2,old_thread);
+			}
+			else if(old_thread->priority == MED){
+				old_thread->priority = LOW;
+				enqueue(Scheduler->tasklist->L3,old_thread);
+			}
 		}
 	}
 
@@ -300,21 +403,55 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr) {
 };
 
 /* initial the mutex lock */
-int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr) {
+int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr)
+{
+	mutex = (my_pthread_mutex_t*)malloc(sizeof(my_pthread_mutex_t*));
+
+	mutex->mutexQ = initQ();
+	mutex->state = 0;
+	mutex->wait_count = 0;
+
 	return 0;
 };
 
 /* aquire the mutex lock */
-int my_pthread_mutex_lock(my_pthread_mutex_t *mutex) {
+int my_pthread_mutex_lock(my_pthread_mutex_t *mutex)
+{
+	// Only true if mutex is locked.
+	if (__atomic_exchange_n(&mutex->state, 1, __ATOMIC_SEQ_CST) == 1)
+	{
+		// Add to mutex waitQ
+		enqueue(mutex->mutexQ, Scheduler->runningContext);
+
+		// Set runQ state to WAITING
+		Scheduler->runningContext->status = WAITING;
+
+		// Call pthread_yield here??
+	}
+
 	return 0;
 };
 
 /* release the mutex lock */
-int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex) {
+int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex)
+{
+	__atomic_store_n(&mutex->state, 0, __ATOMIC_SEQ_CST);
+
+	// Remove next thread from mutex queue and allows thread to be run by the scheduler again
+	/* 	I (Alex) think there might be some issues where the same thread
+	 	locks, unlocks, and locks again in the same time slice?
+	 	One way around this is to pthread_yield on every unlock, but 
+	 	I don't think if this is preferable.*/
+	tcb* next_thread = dequeue(mutex->mutexQ);
+	next_thread->status = READY;
+
 	return 0;
 };
 
 /* destroy the mutex */
-int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex) {
+int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex)
+{
+	//free(mutex);
+
 	return 0;
 };

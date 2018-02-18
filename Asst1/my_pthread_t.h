@@ -40,19 +40,19 @@ typedef struct threadControlBlock {
  	struct threadControlBlock * next;
 } tcb;
 
-
-/* mutex struct definition */
-typedef struct my_pthread_mutex_t {
-	/* add something here */
-} my_pthread_mutex_t;
-
-
 typedef struct _queue{
 	/* temporary simple FIFO queue */
 	tcb * head;
 	tcb * tail;
 	int num_threads;
 } queue;
+
+/* mutex struct definition */
+typedef struct my_pthread_mutex_t {
+	int state;			// 0 = unlocked, 1 = locked
+	int wait_count;		// Number of waiting threads
+	queue* mutexQ;		// Mutex Queue
+} my_pthread_mutex_t;
 
 typedef struct _MLPQ{
 	queue* L1;
