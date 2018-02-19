@@ -327,6 +327,7 @@ int my_pthread_yield() {
 and add it to the waiting queue for that particular mutex. this should be done first before we re-order its spot in
 the tasklist since its being blocked */
 
+
 // I (Alex) have the mutex queueing implemented in the mutex functions, so I'll just have it skip over this block if waiting?
 
 	if (old_thread->status != WAITING)
@@ -391,15 +392,51 @@ void my_pthread_exit(void *value_ptr) {
 
 	tcb* old_thread = Scheduler->runningContext;
 	old_thread->status = TERMINATED;
+	old_thread->returnValue = value_ptr;
 	enqueue(Scheduler->terminatedQ, old_thread);
 
-	//Here we would include if/else block in my_pthread_yield
-	//to swap context?
+	//The next 35 lines are from the pthread_yield thread
+	//to move after the current thread is added to the correct queue
+	if(!QisEmpty(Scheduler->runQ)){
+	tcb* new_thread = dequeue(Scheduler->runQ);
+
+	if(new_thread->priority == HIGH){
+		timer.it_value.tv_sec = 0;
+		timer.it_value.tv_usec = QUANTA;
+		timer.it_interval.tv_sec = 0;
+		timer.it_interval.tv_usec = QUANTA;
+		setitimer(ITIMER_VIRTUAL, &timer, NULL);
+		swapcontext(old_thread->context,new_thread->context);
+	} else if(new_thread->priority == MED){
+		timer.it_value.tv_sec = 0;
+		timer.it_value.tv_usec = 5*QUANTA;
+		timer.it_interval.tv_sec = 0;
+		timer.it_interval.tv_usec = 5*QUANTA;
+		setitimer(ITIMER_VIRTUAL, &timer, NULL);
+		swapcontext(old_thread->context,new_thread->context);
+	} else if(new_thread->priority == LOW){
+		timer.it_value.tv_sec = 0;
+		timer.it_value.tv_usec = 10*QUANTA;
+		timer.it_interval.tv_sec = 0;
+		timer.it_interval.tv_usec = 10*QUANTA;
+		setitimer(ITIMER_VIRTUAL, &timer, NULL);
+		swapcontext(old_thread->context,new_thread->context);
+	}
+	} else{
+		swapcontext(old_thread->context,Scheduler->context);
+	}
+
 };
 
 /* wait for thread termination */
 int my_pthread_join(my_pthread_t thread, void **value_ptr) {
-	return 0;
+	while(thread->status != TERMINATED)
+	{
+		my_pthread_yield();
+	}
+	threat->returnValue = *value_ptr;
+	
+	return 0;//since run was successufl
 };
 
 /* initial the mutex lock */

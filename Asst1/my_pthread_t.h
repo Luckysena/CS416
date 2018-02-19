@@ -35,6 +35,7 @@ typedef struct threadControlBlock {
 	ucontext_t *context;
 	state status;
 	int runCount;
+	void * returnValue;
 	Priority priority;
 	my_pthread_t tid;
  	struct threadControlBlock * next;
