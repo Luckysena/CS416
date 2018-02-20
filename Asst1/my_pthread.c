@@ -26,6 +26,7 @@ tcb* initTCB(my_pthread_t * tid){
 	}
 
 	tcb* newTCB = (tcb*)malloc(sizeof(tcb));
+	ucontext_t *newTCB->context = (ucontext_t*)malloc(sizeof(ucontext_t));
 	getcontext(newTCB->context);   //may need to init stack and flags
 	newTCB->context->uc_link = 0;  //should go to scheduler upon completion, need to work on it
 	newTCB->context->uc_stack.ss_sp = malloc(MEM);
@@ -468,7 +469,7 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr) {
 
 	return 0;
 
-	
+
 };
 
 /* initial the mutex lock */
