@@ -13,15 +13,6 @@
 #define L2THREADS 5
 #define L3THREADS 3
 
-#define pthread_create my_pthread_create
-#define pthread_yield my_pthread_yield
-#define pthread_exit my_pthread_exit
-#define pthread_join my_pthread_join
-#define pthread_mutex_t my_pthread_mutex_t
-#define pthread_mutex_init my_pthread_mutex_init
-#define pthread_mutex_lock my_pthread_mutex_lock
-#define pthread_mutex_unlock my_pthread_mutex_unlock
-#define pthread_mutex_destroy my_pthread_mutex_destroy
 
 int is_scheduler_init = 0;
 tcb* tcbList[32];
@@ -48,6 +39,7 @@ tcb* initTCB(my_pthread_t * tid){
 		if(tcbList[i] == NULL){
 			newTCB->tid = tid;
 			tcbList[i] = newTCB;
+			break;
 		}
 	}
 	newTCB->next = NULL;
@@ -217,7 +209,7 @@ void quickSort(tcb* list[], int l, int r){
 
 int partition(tcb* list[], int l, int r) {
    int i, j;
-	 tcb * t, pivot;
+	 tcb * t, *pivot;
    pivot = list[l];
    i = l; j = r+1;
 
@@ -475,6 +467,8 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr) {
 	Scheduler->isWait = 0;
 
 	return 0;
+
+	
 };
 
 /* initial the mutex lock */
