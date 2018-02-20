@@ -31,18 +31,19 @@ typedef enum _priority{
 	LOW, MED, HIGH
 }Priority;
 
+
 typedef struct threadControlBlock {
 	ucontext_t *context;
 	state status;
 	int runCount;
 	void * returnValue;
 	Priority priority;
-	my_pthread_t tid;
+	my_pthread_t* tid;
  	struct threadControlBlock * next;
 } tcb;
 
 typedef struct _queue{
-	/* temporary simple FIFO queue */
+	/* simple FIFO queue */
 	tcb * head;
 	tcb * tail;
 	int num_threads;
@@ -50,10 +51,13 @@ typedef struct _queue{
 
 /* mutex struct definition */
 typedef struct my_pthread_mutex_t {
+	int mutexID;
 	int state;			// 0 = unlocked, 1 = locked
 	int wait_count;		// Number of waiting threads
 	queue* mutexQ;		// Mutex Queue
+	tcb * owner;
 } my_pthread_mutex_t;
+
 
 typedef struct _MLPQ{
 	queue* L1;
@@ -68,9 +72,9 @@ typedef struct _scheduler{
 	tcb *mainContext;
 	queue * terminatedQ;
 	queue * runQ;
-	queue * waitQ;
 	MLPQ * tasklist;
 	int runCount;
+	int isWait;
 }scheduler;
 
 
@@ -82,6 +86,10 @@ struct itimerval timer;
 
 
 /* Function Declarations: */
+int partition(tcb* list[], int l, int r);
+
+void quickSort(tcb* list[], int l, int r);
+
 void schedulerfn();
 
 /* timer init */
