@@ -26,12 +26,12 @@ tcb* initTCB(my_pthread_t * tid){
 	}
 
 	tcb* newTCB = (tcb*)malloc(sizeof(tcb));
-	ucontext_t *newTCB->context = (ucontext_t*)malloc(sizeof(ucontext_t));
-	getcontext(newTCB->context);   //may need to init stack and flags
+	newTCB->context = (ucontext_t*)malloc(sizeof(ucontext_t));   //may need to init stack and flags
 	newTCB->context->uc_link = 0;  //should go to scheduler upon completion, need to work on it
 	newTCB->context->uc_stack.ss_sp = malloc(MEM);
 	newTCB->context->uc_stack.ss_size = MEM;
 	newTCB->context->uc_stack.ss_flags = 0;
+	getcontext(newTCB->context);
 	newTCB->status = NEW;
 	newTCB->runCount = 0;
 	newTCB->priority = HIGH;
@@ -53,10 +53,14 @@ queue* initQ()
 	newQ->num_threads = 0;
 	newQ->head = NULL;
 	newQ->tail = NULL;
+	return newQ;
 }
 
 int QisEmpty(queue* qq)
 {
+	if(qq == NULL){
+		printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	}
 	if(qq->num_threads==0){
 		return 1;
 	}
@@ -109,18 +113,11 @@ tcb* dequeue(queue* qq)
 
 MLPQ* initTasklist(){
 	MLPQ* newMLPQ = (MLPQ*)malloc(sizeof(MLPQ));
-	newMLPQ->L1 = (queue*)malloc(sizeof(queue));
-	newMLPQ->L2 = (queue*)malloc(sizeof(queue));
-	newMLPQ->L3 = (queue*)malloc(sizeof(queue));
-	newMLPQ->L1->num_threads = 0;
-	newMLPQ->L2->num_threads = 0;
-	newMLPQ->L3->num_threads = 0;
-	newMLPQ->L1->head = NULL;
-	newMLPQ->L1->tail = NULL;
-	newMLPQ->L2->head = NULL;
-	newMLPQ->L2->tail = NULL;
-	newMLPQ->L3->head = NULL;
-	newMLPQ->L3->tail = NULL;
+	newMLPQ->L1 = initQ();
+	newMLPQ->L2 = initQ();
+	newMLPQ->L3 = initQ();
+
+	return newMLPQ;
 }
 
 void init_scheduler(){
@@ -134,17 +131,19 @@ void init_scheduler(){
 	Scheduler = (scheduler*)malloc(sizeof(scheduler));  //memory for scheduler
 	Scheduler->mainContext = initTCB(INIT);
 	Scheduler->runQ = initQ();
+	Scheduler->runningContext = Scheduler->mainContext;
 	Scheduler->tasklist = initTasklist();
 	Scheduler->runCount = 0;
 	Scheduler->isWait = 0;
 	is_scheduler_init = 1;
 
 	// context for scheduler
-	getcontext(Scheduler->context);
+	Scheduler->context = (ucontext_t*)malloc(sizeof(ucontext_t));
 	Scheduler->context->uc_link = 0; //replace with cleanup program later
 	Scheduler->context->uc_stack.ss_sp = malloc(MEM);
 	Scheduler->context->uc_stack.ss_size = MEM;
 	Scheduler->context->uc_stack.ss_flags = 0;
+	getcontext(Scheduler->context);
 	makecontext(Scheduler->context,(void*)&schedulerfn, 0); //set up scheduler function
 
 	// add main() to Level 1
@@ -229,6 +228,7 @@ int partition(tcb* list[], int l, int r) {
 
 void clock_interrupt_handler(){
 
+		printf("ALARM!!!!!!!!!");
 		// turn off timer
 		timer.it_value.tv_sec = 0;
 		timer.it_value.tv_usec = 0;
@@ -319,7 +319,7 @@ void schedulerfn(){
 		timer.it_interval.tv_sec = 0;
 		timer.it_interval.tv_usec = QUANTA;
 		setitimer(ITIMER_VIRTUAL, &timer, NULL);
-		setcontext(Scheduler->runningContext->context);
+		swapcontext(Scheduler->context,Scheduler->runningContext->context);
 
 	}
 }
@@ -348,7 +348,7 @@ int my_pthread_yield() {
 
 	tcb* old_thread = Scheduler->runningContext;
 
-	if ((old_thread->status != WAITING) || (old_thread->status != TERMINATED))
+	if ((old_thread->status != WAITING) && (old_thread->status != TERMINATED))
 	{
 			//inc run count
 		old_thread->runCount++;
@@ -398,7 +398,7 @@ int my_pthread_yield() {
 			timer.it_interval.tv_sec = 0;
 			timer.it_interval.tv_usec = QUANTA;
 			setitimer(ITIMER_VIRTUAL, &timer, NULL);
-			setcontext(new_thread->context);
+			swapcontext(old_thread->context,new_thread->context);
 		}
 
 		else if(new_thread->priority == MED){
@@ -408,7 +408,7 @@ int my_pthread_yield() {
 			timer.it_interval.tv_sec = 0;
 			timer.it_interval.tv_usec = 5*QUANTA;
 			setitimer(ITIMER_VIRTUAL, &timer, NULL);
-			setcontext(new_thread->context);
+			swapcontext(old_thread->context,new_thread->context);
 		}
 
 		else if(new_thread->priority == LOW){
@@ -418,12 +418,12 @@ int my_pthread_yield() {
 		timer.it_interval.tv_sec = 0;
 		timer.it_interval.tv_usec = 10*QUANTA;
 		setitimer(ITIMER_VIRTUAL, &timer, NULL);
-		setcontext(new_thread->context);
+		swapcontext(old_thread->context,new_thread->context);
 		}
 	}
 	//this is incase the runQ is finished, then we swap to scheduler to make a new one
 	else{
-		setcontext(Scheduler->context);
+		swapcontext(old_thread->context,Scheduler->context);
 	}
 
 	return 0;
@@ -475,7 +475,7 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr) {
 /* initial the mutex lock */
 int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr)
 {
-	mutex = (my_pthread_mutex_t*)malloc(sizeof(my_pthread_mutex_t*));
+	mutex = (my_pthread_mutex_t*)malloc(sizeof(my_pthread_mutex_t));
 	mutex->mutexQ = initQ();
 	mutex->state = 0;
 	mutex->wait_count = 0;
@@ -486,7 +486,9 @@ int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *
 /* aquire the mutex lock */
 int my_pthread_mutex_lock(my_pthread_mutex_t *mutex)
 {
-
+	if(mutex->state == 0){
+		printf("here");
+	}
 	if(mutex->owner == NULL){
 		// then continue
 	}
