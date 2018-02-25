@@ -1,0 +1,105 @@
+how can SJF be approximated?
+reduce quanta for RR
+
+rank RR,SJF preemptive and non premptive FIFO and SRTF in terms of:
+min/avg turnaround
+min/avg expected time
+write assumptions
+non-preemptive - cant change anything after schedule is made
+preemptive - can change if a higher priority came
+c&d same
+
+
+Describe priority inversion?
+Describe how high priority did I/O before lower level got it
+
+Describe difference between context switch between threads and processes
+
+
+kernel threads vs user threads run on multiple cores?
+Scheduler can only see user threads within a single process
+
+
+Bankers Algo prevent deadlock on resource allocation?
+If you request a resource then it checks if all sequences of allocations after lead to everyone completing?
+
+How can scheduler protect memory?
+it chooses which processes are running, effectively blocking others from altering memory
+
+
+How is binary semaphore and mutex different?
+semaphore = no wait ordering and locks on both 0 and 1, anyone can unlock, asynchronous safe
+mutex = no wait ordering, and locks on 1, only owner can unlock
+
+sketch an implementation for a barrier below using any of the three synch primitives
+You should write a barrier_create() and a barrier_wait() function
+presumer existence of mutex_create() and mutex_lock() function
+
+barrier - waits on all members before any can continue
+barrier_create(num_threads), threads will call barrier_wait() when they hit the barrier
+
+lock to increase num_threads, check for num threads and totalThreads to equal and then unlock.
+Have each thread to spin after until barrier is done (//spin in while loop)
+make sure to mutex create
+
+struct Barrier{
+  int numThreadsFinished;
+  int totalThreads;
+  mutex lock;
+}
+
+What two rules do programmers have to follow to be sure not to deadlock when using mutexes?
+Global ordering: unlocking and locking
+
+
+Four conditions for deadlock?
+hold and wait
+no preemption
+circular wait
+mutual exclusion
+
+Sometimes the deadlock conditions can not be avoided when resources must be used in a certain order.
+What sych mechanism can be used in such a case?
+Monitors!
+
+Why does the user have to have a special hardware instruction in order to implement
+synch mechanism? Detail why userspace and system code are both unsuitable.
+The assembly instructions require you to fetch, decode, and execute some someone could fetch while ur decoding
+so you need atomic hardware instructions to perform for user
+Since user is the one asking for mutex, it asks OS for it. It has to access point, then trap, then OS swaps value
+and then it RTE. But this takes FOREVER
+
+
+F/D/E cycle?
+
+VM Concepts:
+1) Gives illusion of all memory needed
+
+2) TLB->Page Table->RAM->Disk    TLB lets us bypass page table by mapping directly to RAM
+
+
+While virtual memory allows for the use of a swap file to gain the illusion of having more physical memory,
+it was not the original design intention.
+Describe below how virtual memory:
+a. allows a programmer to access IO devices without knowing their specific command set:
+  USR uses virtual address which is mem mapped to read/write and OS translate its to physical address to communicate
+
+b. allows a programmer to write code that, once compiled, could be run on that machine in any state:
+  due to illusion of all memory being visible to user, the ordering in physical memory is irrelevent to user since OS manages it
+
+c. keeps programmers from accidentally modifying the code or data of other processes running on the system:
+  since you protect the memory region with memprotect so if they try to access something out of their
+  bounds then you can enforce it with seg faults and checking page values
+
+What is the TLB? What does it optimize?
+Translation Look-aside Buffer- is really just a cache that translates virtual addresses to physical addresses fast
+Has pre-recorded address translations for a page
+
+Explain the differences between internal and external fragmentation?
+internal - pages which not all the space is used
+external - memory within two blocks which you can not allocate because its too small
+
+Paging memory increases internal fragmentation, so why is it used?
+looking at pros and cons of external/internal and answer like that
+- decreases external fragmentation
+- allows us to use things like page tables efficiently without much overhead compared to segmentation

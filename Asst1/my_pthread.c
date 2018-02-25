@@ -15,19 +15,25 @@
 
 
 int is_scheduler_init = 0;
-tcb* tcbList[32];
+tcb* tcbList[33];
+
 
 tcb* initTCB(my_pthread_t * tid){
 	int i;
 	if(!is_scheduler_init){
-		for(i = 0;i<32;i++){
+		for(i = 0;i<33;i++){
 			tcbList[i] = NULL;
 		}
 	}
 
 	tcb* newTCB = (tcb*)malloc(sizeof(tcb));
 	newTCB->context = (ucontext_t*)malloc(sizeof(ucontext_t));   //may need to init stack and flags
-	newTCB->context->uc_link = 0;  //should go to scheduler upon completion, need to work on it
+	if(!is_scheduler_init){
+		newTCB->context->uc_link = 0;  //should go to scheduler upon completion, need to work on it
+	}
+	else{
+		newTCB->context->uc_link = Scheduler->mainContext->context;
+	}
 	newTCB->context->uc_stack.ss_sp = malloc(MEM);
 	newTCB->context->uc_stack.ss_size = MEM;
 	newTCB->context->uc_stack.ss_flags = 0;
@@ -35,9 +41,11 @@ tcb* initTCB(my_pthread_t * tid){
 	newTCB->status = NEW;
 	newTCB->runCount = 0;
 	newTCB->priority = HIGH;
+	newTCB->returnValue = (int*)malloc(sizeof(int));
 
-	for(i = 0; i<32; i++){
+	for(i = 0; i<33; i++){
 		if(tcbList[i] == NULL){
+			*tid = i;
 			newTCB->tid = tid;
 			tcbList[i] = newTCB;
 			break;
@@ -47,8 +55,7 @@ tcb* initTCB(my_pthread_t * tid){
 	return newTCB;
 }
 
-queue* initQ()
-{
+queue* initQ(){
 	queue* newQ = (queue*)malloc(sizeof(queue));
 	newQ->num_threads = 0;
 	newQ->head = NULL;
@@ -56,19 +63,15 @@ queue* initQ()
 	return newQ;
 }
 
-int QisEmpty(queue* qq)
-{
-	if(qq == NULL){
-		printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-	}
+int QisEmpty(queue* qq){
+
 	if(qq->num_threads==0){
 		return 1;
 	}
 	else return 0;
 }
 
-void enqueue(queue* qq,tcb* thread)
-{
+void enqueue(queue* qq,tcb* thread){
 	if (qq->num_threads == 0){
 		qq->head = thread;
 		qq->tail = thread;
@@ -86,8 +89,7 @@ void enqueue(queue* qq,tcb* thread)
 	}
 }
 
-tcb* dequeue(queue* qq)
-{
+tcb* dequeue(queue* qq){
 		tcb* tmp ;
 
 		if(qq->num_threads == 0){
@@ -121,35 +123,27 @@ MLPQ* initTasklist(){
 }
 
 void init_scheduler(){
-	/*
-	Need to initialize the queues & mutexes
-	*/
-
 
 	my_pthread_t * INIT = (my_pthread_t*)malloc(sizeof(my_pthread_t));
-	*INIT = 1;
+	*INIT = 0;
 	Scheduler = (scheduler*)malloc(sizeof(scheduler));  //memory for scheduler
 	Scheduler->mainContext = initTCB(INIT);
 	Scheduler->runQ = initQ();
+	Scheduler->joinQ = initQ();
+	Scheduler->terminatedQ = initQ();
 	Scheduler->runningContext = Scheduler->mainContext;
 	Scheduler->tasklist = initTasklist();
 	Scheduler->runCount = 0;
 	Scheduler->isWait = 0;
+	int i;
+	Scheduler->Monitor = malloc(sizeof(my_pthread_mutex_t)*32);
+	for(i = 0; i<32; i++){
+		Scheduler->Monitor[i] = NULL;
+
+	}
+
+
 	is_scheduler_init = 1;
-
-	// context for scheduler
-	Scheduler->context = (ucontext_t*)malloc(sizeof(ucontext_t));
-	Scheduler->context->uc_link = 0; //replace with cleanup program later
-	Scheduler->context->uc_stack.ss_sp = malloc(MEM);
-	Scheduler->context->uc_stack.ss_size = MEM;
-	Scheduler->context->uc_stack.ss_flags = 0;
-	getcontext(Scheduler->context);
-	makecontext(Scheduler->context,(void*)&schedulerfn, 0); //set up scheduler function
-
-	// add main() to Level 1
-	enqueue(Scheduler->tasklist->L1,Scheduler->mainContext);
-
-	// timer init
 	signal(SIGVTALRM,clock_interrupt_handler);
 	timer.it_value.tv_sec = 0;
 	timer.it_value.tv_usec = QUANTA;
@@ -166,77 +160,36 @@ void maintence(){
 	//remove terminated threads as long as none are waiting
 	if(Scheduler->isWait == 0){
 		for(i = 0; i < Scheduler->terminatedQ->num_threads; i++){
+			tcbList[*Scheduler->terminatedQ->head->tid] = NULL;
 			free(dequeue(Scheduler->terminatedQ));
 		}
 	}
 
-	// Put everything into temp_list
-	tcb * temp_list[32];
-	for (i = 0; i < Scheduler->tasklist->L3->num_threads; i++)
+
+	// if it ran more than 10 times bump it to L1
+	int sizeList = Scheduler->tasklist->L3->num_threads;
+	for (i = 0;i < sizeList; i++)
 	{
-		temp_list[i] = dequeue(Scheduler->tasklist->L3);
-	}
-
-	quickSort(temp_list,0,Scheduler->tasklist->L3->num_threads);
-	int list_size = Scheduler->tasklist->L3->num_threads;
-	Scheduler->tasklist->L3->num_threads = 0;
-
-	//take top half and put it back in L3
-	for(i = 0; i < (list_size/2); i++)
-	{
-	 	enqueue(Scheduler->tasklist->L3, temp_list[i]);
-	}
-
-	list_size = list_size/2;
-	//other half goes into L1
-	for(i = 0; i < list_size; i++)
-	{
-	 	enqueue(Scheduler->tasklist->L1, temp_list[i]);
-	}
-
-}
-
-void quickSort(tcb* list[], int l, int r){
-	int j;
-
-	if( l < r )
-	{
-	 	j = partition( list, l, r);
-		quickSort(list, l, j-1);
-		quickSort(list, j+1, r);
-	}
-}
-
-int partition(tcb* list[], int l, int r) {
-   int i, j;
-	 tcb * t, *pivot;
-   pivot = list[l];
-   i = l; j = r+1;
-
-   while(1)
-   {
-   	do ++i; while( list[i]->runCount <= pivot->runCount && i <= r );
-   	do --j; while( list[j]->runCount > pivot->runCount );
-   	if( i >= j ){
-			break;
+		if(Scheduler->tasklist->L3->head->runCount >= 10){
+			tcb * ptr = dequeue(Scheduler->tasklist->L3);
+			ptr->priority = HIGH;
+			enqueue(Scheduler->tasklist->L1, ptr);
 		}
-   	t = list[i]; list[i] = list[j]; list[j] = t;
-   }
-   t = list[l]; list[l] = list[j]; list[j] = t;
-   return j;
+	}
+	return;
 }
+
+
 
 void clock_interrupt_handler(){
 
-		printf("ALARM!!!!!!!!!");
 		// turn off timer
 		timer.it_value.tv_sec = 0;
 		timer.it_value.tv_usec = 0;
 		setitimer(ITIMER_VIRTUAL, &timer, NULL);
 
 		//establish that clock stopped this thread and that it didnt yield explicitly
-		tcb* current_thread = Scheduler->runningContext;
-		current_thread->status = INTERRUPTED;
+	 	Scheduler->runningContext->status = INTERRUPTED;
 
 		//call yield to handle the thread and run next item
 		my_pthread_yield();
@@ -245,10 +198,7 @@ void clock_interrupt_handler(){
 }
 
 void schedulerfn(){
-	//run this forever
 	int i;
-	while(1)
-	{
 
 		//maintence counter
 		Scheduler->runCount++;
@@ -259,10 +209,9 @@ void schedulerfn(){
 
 		//this should always occur, runQ will be empty and we swap to scheduler to run its maintence
 		if(QisEmpty(Scheduler->runQ)){
-			/* Here we will select the next runQ from the MLPQ
-			   I(Mykola) think we should choose up to 60 QUANTA
-				 for the runQ, we can readjust as needed, up to 5 from L1, up to 5 from L2, up to 3 from L3 */
-
+					int L1size = Scheduler->tasklist->L1->num_threads;
+					int L2size = Scheduler->tasklist->L2->num_threads;
+					int L3size = Scheduler->tasklist->L3->num_threads;
 				 // Grab from L1
 				 if(Scheduler->tasklist->L1->num_threads >= L1THREADS)
 				 {
@@ -273,7 +222,7 @@ void schedulerfn(){
 				 }
 				 else
 				 {
-				 	for (i = 0; i < Scheduler->tasklist->L1->num_threads; i++)
+				 	for (i = 0; i < L1size; i++)
 				 	{
 				 		enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L1));
 				 	}
@@ -283,14 +232,14 @@ void schedulerfn(){
 				 {
 					for(i = 0; i < L2THREADS; i++)
 					{
-					 	enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L1));
+					 	enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L2));
 					}
 				 }
 				 else
 				 {
-				 	for (i = 0; i < Scheduler->tasklist->L2->num_threads; i++)
+				 	for (i = 0; i < L2size; i++)
 				 	{
-				 		enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L1));
+				 		enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L2));
 				 	}
 				 }
 				 // Grab from L3
@@ -298,31 +247,43 @@ void schedulerfn(){
 				 {
 					for(i = 0; i < L3THREADS; i++)
 					{
-					 	enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L1));
+					 	enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L3));
 					}
 				 }
 				 else
 				 {
-				 	for (i = 0; i < Scheduler->tasklist->L3->num_threads; i++)
+				 	for (i = 0; i < L3size; i++)
 				 	{
-				 		enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L1));
+				 		enqueue(Scheduler->runQ, dequeue(Scheduler->tasklist->L3));
 				 	}
 				 }
 
 		}
 
 		//then reset timer and swap context to first in runQ
-		Scheduler->runningContext = dequeue(Scheduler->runQ);
-
+		tcb* old_context = Scheduler->runningContext;
+		if(Scheduler->runQ->num_threads != 0){
+			Scheduler->runningContext = dequeue(Scheduler->runQ);
+		}
 		timer.it_value.tv_sec = 0;
 		timer.it_value.tv_usec = QUANTA;
 		timer.it_interval.tv_sec = 0;
 		timer.it_interval.tv_usec = QUANTA;
 		setitimer(ITIMER_VIRTUAL, &timer, NULL);
-		swapcontext(Scheduler->context,Scheduler->runningContext->context);
+		swapcontext(old_context->context,Scheduler->runningContext->context);
 
-	}
+		return;
 }
+
+void wrapper_thread_function(void *(*function)(void *), void *arg) {
+  void *retVal = function(arg);
+  if (retVal != NULL) {
+    my_pthread_exit(retVal);
+  } else {
+    my_pthread_exit(NULL);
+  }
+}
+
 /* create a new thread */
 int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*function)(void*), void * arg) {
 
@@ -333,7 +294,7 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 	tcb * newTCB = initTCB(thread);
 
 	// add the function and arguments to the newTCB and then add it to queue L1
-	makecontext((newTCB->context), (void*)function, 1, arg);
+	makecontext((newTCB->context), (void*)wrapper_thread_function, 2,function, arg);
 	enqueue(Scheduler->tasklist->L1, newTCB);
 
 	return 0;
@@ -342,16 +303,21 @@ int my_pthread_create(my_pthread_t * thread, pthread_attr_t * attr, void *(*func
 /* give CPU pocession to other user level threads voluntarily */
 int my_pthread_yield() {
 	//kill timer
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
+
 	timer.it_value.tv_sec = 0;
 	timer.it_value.tv_usec = 0;
 	setitimer(ITIMER_VIRTUAL, &timer, NULL);
 
 	tcb* old_thread = Scheduler->runningContext;
+	old_thread->runCount++;
 
 	if ((old_thread->status != WAITING) && (old_thread->status != TERMINATED))
 	{
 			//inc run count
-		old_thread->runCount++;
+
 
 		//change priority and enqueue it into MLPQ (tasklist) only if it didn't call yield explicitly
 		if(old_thread->status == INTERRUPTED){
@@ -362,6 +328,10 @@ int my_pthread_yield() {
 			}
 			else if(old_thread->priority == MED){
 				old_thread->priority = LOW;
+				enqueue(Scheduler->tasklist->L3,old_thread);
+				old_thread->status = READY;
+			}
+			else if(old_thread->priority == LOW){
 				enqueue(Scheduler->tasklist->L3,old_thread);
 				old_thread->status = READY;
 			}
@@ -385,6 +355,7 @@ int my_pthread_yield() {
 	else if(old_thread->status == TERMINATED){
 		enqueue(Scheduler->terminatedQ, old_thread);
 	}
+
 
 	//check if runQ is empty, if its not then run next item in it based on its priority
 	if(!QisEmpty(Scheduler->runQ)){
@@ -422,8 +393,8 @@ int my_pthread_yield() {
 		}
 	}
 	//this is incase the runQ is finished, then we swap to scheduler to make a new one
-	else{
-		swapcontext(old_thread->context,Scheduler->context);
+	else{ //when we do this we killed main()
+		schedulerfn();
 	}
 
 	return 0;
@@ -432,40 +403,57 @@ int my_pthread_yield() {
 /* terminate a thread */
 void my_pthread_exit(void *value_ptr) {
 
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
+
 	tcb* old_thread = Scheduler->runningContext;
 	old_thread->status = TERMINATED;
-	old_thread->returnValue = value_ptr;
+	old_thread->returnValue = (int*)value_ptr;
 
-	pthread_yield();
+	my_pthread_yield();
 
 };
 
 /* wait for thread termination */
 int my_pthread_join(my_pthread_t thread, void **value_ptr) {
 
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
+
+
 	int i;
 	tcb* joiningTCB = NULL;
 	for(i = 0; i < 32; i++){
-		if(*(tcbList[i]->tid) == thread){
-			joiningTCB = tcbList[i];
-			break;
+		if(tcbList[i]->tid != NULL){
+			if(*(tcbList[i]->tid) == thread){
+				joiningTCB = tcbList[i];
+				break;
+			}
 		}
 	}
 
 	if(joiningTCB == NULL){
 		//unlikely situation where scheduler cleaned term thread before parent called joiningTCB
+		//or invalid tid was given
 		return -1;
 	}
 	// situation where terminated thread is cleaned up?
 	while(joiningTCB->status != TERMINATED){
 		Scheduler->isWait = 1;
-		Scheduler->runningContext->status = WAITING;
+		Scheduler->runningContext->status = JOINING;
 		my_pthread_yield();
 	}
-
 	Scheduler->runningContext->status = READY;
-	*value_ptr = joiningTCB->returnValue;
 	Scheduler->isWait = 0;
+
+	if(value_ptr == NULL){
+		return 0;
+	}
+
+	*value_ptr = (int*)joiningTCB->returnValue;
+
 
 	return 0;
 
@@ -473,22 +461,36 @@ int my_pthread_join(my_pthread_t thread, void **value_ptr) {
 };
 
 /* initial the mutex lock */
-int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr)
-{
-	mutex = (my_pthread_mutex_t*)malloc(sizeof(my_pthread_mutex_t));
+int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *mutexattr){
+	if(mutex==NULL){
+		return -1;
+	}
+
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
+	int i;
+	for(i=0;i<32;i++){
+		if(Scheduler->Monitor[i] == NULL){
+			Scheduler->Monitor[i] = mutex;
+			break;
+		}
+	}
 	mutex->mutexQ = initQ();
 	mutex->state = 0;
 	mutex->wait_count = 0;
+
 
 	return 0;
 };
 
 /* aquire the mutex lock */
-int my_pthread_mutex_lock(my_pthread_mutex_t *mutex)
-{
-	if(mutex->state == 0){
-		printf("here");
+int my_pthread_mutex_lock(my_pthread_mutex_t *mutex){
+	if(!is_scheduler_init){
+		init_scheduler();
 	}
+
+
 	if(mutex->owner == NULL){
 		// then continue
 	}
@@ -525,14 +527,16 @@ int my_pthread_mutex_lock(my_pthread_mutex_t *mutex)
 };
 
 /* release the mutex lock */
-int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex)
-{
+int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex){
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
 	//only unlock if its the owner
 	if(mutex->owner->tid == Scheduler->runningContext->tid){
 		__atomic_store_n(&mutex->state, 0, __ATOMIC_SEQ_CST);
 	}
 
-	//check waitQ
+
 	if(QisEmpty(mutex->mutexQ)){
 		mutex->owner = NULL;
 		return 0;
@@ -549,15 +553,17 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex)
 };
 
 /* destroy the mutex */
-int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex)
-{
+int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex){
+	if(!is_scheduler_init){
+		init_scheduler();
+	}
 	//check if mutex is unlocked, this inherently makes sure queue is empty
 	if(mutex->state == 1){
 		return -1;
 	}
 
 	//otherwise free it
-	free(mutex);
+	free(mutex->mutexQ);
 
 	return 0;
 };

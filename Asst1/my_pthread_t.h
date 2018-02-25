@@ -10,7 +10,6 @@
 
 
 
-
 #define _GNU_SOURCE
 
 /* include lib header files that you need here: */
@@ -24,10 +23,12 @@
 #include <signal.h>
 #include <string.h>
 
+
+
 typedef uint my_pthread_t;
 
 typedef enum _state{
-	READY, RUNNING, WAITING, TERMINATED, NEW, INTERRUPTED
+	READY, RUNNING, WAITING, TERMINATED, NEW, INTERRUPTED, JOINING
 }state;
 
 typedef enum _priority{
@@ -39,7 +40,7 @@ typedef struct threadControlBlock {
 	ucontext_t *context;
 	state status;
 	int runCount;
-	void * returnValue;
+	int * returnValue;
 	Priority priority;
 	my_pthread_t* tid;
  	struct threadControlBlock * next;
@@ -70,14 +71,15 @@ typedef struct _MLPQ{
 
 
 typedef struct _scheduler{
-	ucontext_t *context;
 	tcb *runningContext;
 	tcb *mainContext;
 	queue * terminatedQ;
 	queue * runQ;
 	MLPQ * tasklist;
+	queue * joinQ;
 	int runCount;
 	int isWait;
+	my_pthread_mutex_t ** Monitor;
 }scheduler;
 
 
@@ -86,12 +88,10 @@ typedef struct _scheduler{
 /* define your data structures here: */
 scheduler * Scheduler;
 struct itimerval timer;
+//struct sigaction sa;
 
 
 /* Function Declarations: */
-int partition(tcb* list[], int l, int r);
-
-void quickSort(tcb* list[], int l, int r);
 
 void schedulerfn();
 
@@ -127,6 +127,7 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
+
 
 #define USE_MY_PTHREAD 1
 
