@@ -1,0 +1,165 @@
+#include "mymalloc.h"
+
+long int wlAmean = 0;
+long int wlBmean = 0;
+long int wlCmean = 0;
+long int wlDmean = 0;
+
+void printTime(char* message, long int mean){
+  printf("The mean time for workload %s was %ld\n", message, mean);
+}
+long int getTime(struct timeval start, struct timeval end){
+//(long int)(1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+
+return ((end.tv_sec * 1000000 + end.tv_usec) -
+    (start.tv_sec * 1000000 + start.tv_usec ));
+}
+
+void workloadA(){
+  int i=0;
+  struct timeval start, end;
+  gettimeofday(&start, NULL);
+  void * ptrs[3000];
+  for(i = 0; i < 3000; i++){
+    ptrs[i] = (char*)malloc(sizeof(char) * 1);
+    }
+  for(i = i - 1; i > -1; i--){
+      if(ptrs[i] != NULL){
+	free(ptrs[i]);}
+    }
+    gettimeofday(&end, NULL);
+    wlAmean += getTime(start, end);
+}
+
+
+void workloadB(){
+  struct timeval start, end;
+  gettimeofday(&start, NULL);
+  int i = 0;
+  for(i=0;i<3000; i++){
+    void * a = (char*)malloc(sizeof(char)); 
+    free(a);
+  }
+
+  gettimeofday(&end, NULL);
+  wlBmean = wlBmean + getTime(start, end);
+}
+
+
+void workloadC(){
+  struct timeval start, end;
+  gettimeofday(&start, NULL);
+  int i;
+  int ptrTrack = 0;
+  int mallocItr = 0;
+  char * ptrs[3000];
+  for(i = 0; i < 6000; i++){
+    int r = rand() % 2;
+    //is malloc                                                                 
+    if(r == 1){
+      //if malloc has been called 3000 times                                    
+      if(mallocItr == 3000){
+        //free the pointers in array                                            
+        for(i = 3000; i < -1; i--){
+	  free(ptrs[i]);
+	}
+      }
+      //malloc has not been called 3000 times                                   
+      ptrs[ptrTrack] = (char*)malloc(sizeof(char));
+      mallocItr++;
+      ptrTrack += 1;//onto next spot in array                                   
+    }else{
+      //if there is not a pointer in the array loop again                       
+      if(ptrs[0] == NULL)
+        continue;
+      //else free the previous pointer                                          
+      free(ptrs[ptrTrack - 1]);
+      ptrTrack--;
+    }
+  }
+  gettimeofday(&end, NULL);
+  wlCmean += getTime(start,end);
+}
+
+/*
+
+void workloadD(){
+  struct timeval start, end;
+  gettimeofday(&start, NULL);
+  int stopmalloc = 0;
+  int i;
+  int ptrTrack = 0;
+  int mallocItr = 0;
+  char * ptrs[3000];
+  for(i = 0; i < 6000; i++){
+    int r = rand() % 2;
+    if(r == 1){
+      if(mallocItr == 3000){
+        freeptrs(ptrs);
+        break;
+      }
+      ptrs[ptrTrack] = (char*)malloc(sizeof(char)*(rand()%3000));
+      ptrTrack++;
+      mallocItr++;
+    }else{
+      if(ptrTrack < 1)
+        continue;
+      free(ptrs[ptrTrack - 1]);
+      ptrTrack--;}
+  }
+  gettimeofday(&end, NULL);
+}
+*/
+void memGrind(){
+  int round = 0;
+  for(round = 0;round < 1; round++){
+    // workloadA();                                                              
+    //workloadB();
+    workloadC();                                                              
+    //workloadD();                                                              
+  }
+  //printTime("A", wlAmean/100.0);                                              
+  //printTime("B", wlBmean/100.0);
+  printTime("C", wlCmean/100.0);                                              
+  //printTime("D", wlDmean/100.0);                                              
+}
+/*
+void freeptrs(char* ptrarray[]){
+  int i = 0;
+  while(1){
+    if(ptrarray[i] == NULL)
+      return;
+    free(ptrarray[i]);
+    i++;
+  }
+}
+*/
+int main(int argc, char ** argv){
+  
+  memGrind();
+  /*
+  char * str1 = (char*)malloc(sizeof(char) * 5);
+  char * str2 = (char*)malloc(sizeof(char) * 5);
+  char * str3 = (char*)malloc(sizeof(char) * 5);
+  char * str4 = (char*)malloc(sizeof(char) * 5);  
+
+  str1[0] = 'h'; str1[1] = 'e'; str1[2] = 'l'; str1[3] = 'l'; str1[4] = 'o'; 
+  str2[0] = 'w'; str2[1] = 'o'; str2[2] = 'r'; str2[3] = 'l'; str2[4] = 'd';
+  str3[0] = 'h'; str3[1] = 'e'; str3[2] = 'l'; str3[3] = 'p'; str3[4] = 's';
+  str4[0] = 'f'; str4[1] = 'u'; str4[2] = 'c'; str4[3] = 'k'; str4[4] = 's';
+
+  printf("str1 is: %s\n", str1);
+  printf("str2 is: %s\n", str2);
+  printf("str3 is: %s\n", str3);
+  printf("str4 is: %s\n", str4);
+ 
+  free(str3);
+  free(str2);
+
+  char * str5 = (char*)malloc(sizeof(char) * 14);
+  str5 = "hello world";
+
+  printf("str5 is: %s\n", str5);
+  */
+  return 0;
+}

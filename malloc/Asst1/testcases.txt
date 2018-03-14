@@ -1,0 +1,44 @@
+Test Cases Write Up
+
+Workload A: 
+We malloc() 1 byte 3000 times and then free all those 1 byte pointers.
+To do this we used an array of void pointers of size 3000. We then traverse through a for loop to allocate all of the pointers to 1 byte.
+Since the way our malloc is implemented, every call to malloc() of 1 byte actually uses 3 byts. This means that we use more memory than our
+5000 byte block of memory can hold. Since the block cannot hold the memory, we return a NULL pointer to that pointer. 
+We then free the pointers that do not point to NULL at the end.
+
+Workload B:
+We malloc() a 1 byte pointer and immediately free it 3000 times. This test was very straitforward.
+We create a pointer for every iteration in a 3000 round for loop. The free is implemented in such 
+a way that it will mend the next door neighbor and the blocks that are being freed. Since the block 
+was mended perfectly when 1 byte is allocated then this means we have the full block to use for the
+next 1 byte.
+
+Workload C:
+We need to randomly choose between malloc()ing 1 byte and free()ing a 1 byte block. To do this we set 
+up an array of pointers of size 3000. We then use rand() % 2 to choose between mallocing and freeing.
+We have a seperate counter to track how many malloc() calls have been made, and when we hit 3000, we 
+free the rest of the pointers in the pointer array that remain. If our malloc block does not have the 
+room for the memory, then we send back a null pointer and do not count it towards our index in the 
+pointer array. 
+
+Workload D:
+This method is basically identical to Wordload C. however, we faced challenges when trying to free a pointer
+in the array. For some reason, our malloc was not placing certain sizes of malloc() into our pointers.
+
+Workload E:
+For this workload, we decided that we would fill up the block of memory in our malloc() function, 
+with a bunch of pointers, and then free it. We would then allocate a block of memory the size of 
+4998. This is the max size of memory that our block can hold. This shows that our free() method 
+successfully works. It means that the free mends the block and is able to allocate the max size block.
+
+Workload F:
+For this workload, we simply decided to create several strings using the malloc call to request 
+a certain amount of memory and freed some strings. Then, we requested memory again to replace the spot that was
+recently freed. In the case the free() does not work, it is due to fragmentation error caused from the previous workloads.
+The Workload works normally if the 5k has never been partitioned yet from previous functions or programs.
+
+We ran into some problems while putting our malloc() and free() functions to the real test. The kinks in the methods
+really started to show as we ran the workloads more and more times in a row. For this reason we did not loop 
+the workloads to run 100 times in a row, and kept them at 1 run in order to keep the program from completely
+seg faulting.
