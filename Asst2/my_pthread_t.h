@@ -83,8 +83,13 @@ typedef struct _scheduler{
 	my_pthread_mutex_t ** Monitor;
 }scheduler;
 
-
-
+typedef struct memoryBlock {
+	
+	struct *memoryBlock;
+	int size;
+	int isFree;
+	int magicNum;
+} memblock;
 
 /* define your data structures here: */
 scheduler * Scheduler;
@@ -93,7 +98,7 @@ struct itimerval timer;
 
 
 /* Function Declarations: */
-void *mymalloc(unsigned short int size, char * file, int line);
+void *myallocate(size_t size, char * file, int line);
 
 void schedulerfn();
 

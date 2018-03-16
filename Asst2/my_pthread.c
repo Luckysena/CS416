@@ -14,25 +14,9 @@
 #define L3THREADS 3
 
 static char memblock[8000000];
-static char *start = &myblock[0];
-static char *prev = &myblock[0];
-static char *curr = &myblock[0];
-static char *next = &myblock[0];
 
 
-void *mymalloc(unsigned short int size, char * file, int line) {
-
-	if ((size < 0 ) || (size > 7999998)) {
-		printf("Requested invalid number of bytes in %s line %i\n", file, line);
-		return NULL;
-	}	
-
-	unsigned short int *p = &size;
-	
-	/* will add more going to dinner.. I need to re-read my material to remember 
- 	* if you make headers for sub-functions, I can work on those when I come back..
- 	* sorry I haven't done anything yet, just kept deleting and rewriting stuff 
- 	*/
+void *myallocate(size_t size, char *file, int line) {
 
 }
 
