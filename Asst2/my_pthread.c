@@ -13,24 +13,92 @@
 #define L2THREADS 5
 #define L3THREADS 3
 #define SYSPAGE (sysconf(_SC_PAGE_SIZE))
+#define MEM_SIZE 8388608
+#define OS_SIZE 2097152
+#define SWAP_SIZE 16777216
+
+
+/**********************************
+					SIGSEV HANDLER
+**********************************/
+static void handler(int sig, siginfo_t *si, void* scrap){
+
+}
+
+
+
+
+
+/**********************************
+					PAGE LIBRARY
+**********************************/
+
+void init_Mem(){
+	base_page = memalign(SYSPAGE,MEM_SIZE);
+	usr_space = base_page + OS_SIZE;
+
+
+	/* init page table  */
+	int i;
+
+	/* OS space */
+
+	for(i = 0; i < OS_PAGE_NUM; i++){
+		pageTable[i].validbit = TRUE;
+		pageTable[i].OS_entry = TRUE;
+		pageTable[i].physLocation = i;
+		pageTable[i].swapLocation = -1;
+		pageTable[i].tid = -1;
+	}
+
+ 	/* USR space */
+	for(i = OS_PAGE_NUM; i < TOTAL_PAGE_NUM; i++){
+		pageTable[i].validbit = TRUE;
+		pageTable[i].OS_entry = FALSE;
+		pageTable[i].physLocation = i;
+		pageTable[i].swapLocation = -1;
+		pageTable[i].tid = -1;
+	}
+
+	/* signal handler for seg faults */
+	struct sigaction sa;
+ 	sa.sa_flags = SA_SIGINFO;
+ 	sigemptyset(&sa.sa_mask);
+ 	sa.sa_sigaction = handler;
+
+ 	if (sigaction(SIGSEGV, &sa, NULL) == -1)
+ 	{
+		printf("Fatal error setting up signal handler\n");
+	 	exit(EXIT_FAILURE);    //explode!
+ 	}
+	return;
+}
 
 
 /**********************************
 					MEMORY LIBRARY
 **********************************/
 
-bool initPage = FALSE;
+
 memEntry* ptr;
+
+
 
 void* myallocate(size_t size, char *file, int line, modebit req) {
 
-	if(size > (SYSPAGE - sizeof(memEntry))) {
-		fprintf(stderr, "error: exceeded 4kb page size\n");
+	if(size <= 0){
+		fprintf(stderr,"ERROR: invalid request, zero or negative value. FILE: %s, LINE %d\n", __FILE__, __LINE__);
 		return NULL;
 	}
 
-	if(!initPage){
+	if(base_page == NULL){
+		init_Mem();
+	}
+
+
+	if(/*check if head is init*/ TRUE /* need to change */){
 		createMemEntry(SYSPAGE, ptr);
+		createMemEntry((SYSPAGE - size - (sizeof(memEntry)*2)),ptr->next);
 		return (void*)(ptr+sizeof(memEntry));
 	}
 
@@ -43,14 +111,11 @@ void mydeallocate(void *ptr, char *file, int line, modebit reg){
 
 
 void createMemEntry(size_t size, memEntry* pointer){
-	  // how can we be sure that our next pointers are pointing to memory next to it??
-		if(!initPage){
-			initPage = !initPage;
-			pointer = (memEntry*)memalign(SYSPAGE,SYSPAGE);
+
+			if(pointer == NULL){
 			pointer->size = (size - sizeof(memEntry));
 			pointer->isFree = FALSE;
 			pointer->magicNum = 1409;
-			createMemEntry((SYSPAGE - size - (sizeof(memEntry)*2)),pointer->next);
 			return;
 		}
 

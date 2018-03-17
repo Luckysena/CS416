@@ -8,6 +8,8 @@
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
 #define _GNU_SOURCE
+#define TOTAL_PAGE_NUM 2048
+#define OS_PAGE_NUM 512
 
 /* include lib header files that you need here: */
 #include <unistd.h>
@@ -20,6 +22,7 @@
 #include <signal.h>
 #include <string.h>
 #include <malloc.h>
+#include <signal.h>
 
 
 
@@ -88,27 +91,31 @@ typedef struct _memEntry {
 	int size;
 	bool isFree;
 	struct _memEntry *next;
+	struct _memEntry *prev;
 	int magicNum;
 } memEntry;
 
 typedef struct _PageTableEntry{
 	bool validbit;
+	bool OS_entry;
 	int physLocation;
 	int swapLocation;
-	int largest_chunk;
 	memEntry* head;
+	my_pthread_t tid;
 } PageTableEntry;
 
-typedef struct _SwapBook{
-	tcb* thread;
-	int pageNum;
-	bool isFree;
-} SwapBook;
 
 
 /* define your data structures here: */
-scheduler * Scheduler;
+scheduler* Scheduler;
 struct itimerval timer;
+PageTableEntry pageTable[TOTAL_PAGE_NUM];
+static void* base_page;
+static void* usr_space;
+
+//unsure of this just yet
+static void* swap_space;
+
 
 
 
