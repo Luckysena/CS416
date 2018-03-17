@@ -7,10 +7,6 @@
 // iLab Server: vi.cs.rutgers.edu
 #ifndef MY_PTHREAD_T_H
 #define MY_PTHREAD_T_H
-
-#define malloc(x) myallocate(x,__FILE__,__LINE__,THREADREQ)
-#define free(x) mydeallocate(x,__FILE__,__LINE__,THREADREQ)
-
 #define _GNU_SOURCE
 
 /* include lib header files that you need here: */
@@ -23,10 +19,15 @@
 #include <ucontext.h>
 #include <signal.h>
 #include <string.h>
+#include <malloc.h>
 
 
 
 typedef uint my_pthread_t;
+
+typedef enum _modebit{
+	LIBRARYREQ, THREADREQ
+}modebit;
 
 typedef enum _state{
 	READY, RUNNING, WAITING, TERMINATED, NEW, INTERRUPTED, JOINING
@@ -36,6 +37,9 @@ typedef enum _priority{
 	LOW, MED, HIGH
 }Priority;
 
+typedef enum _bool{
+	FALSE, TRUE
+}bool;
 
 typedef struct threadControlBlock {
 	ucontext_t *context;
@@ -54,7 +58,6 @@ typedef struct _queue{
 	int num_threads;
 } queue;
 
-/* mutex struct definition */
 typedef struct my_pthread_mutex_t {
 	int mutexID;
 	int state;			// 0 = unlocked, 1 = locked
@@ -63,13 +66,11 @@ typedef struct my_pthread_mutex_t {
 	tcb * owner;
 } my_pthread_mutex_t;
 
-
 typedef struct _MLPQ{
 	queue* L1;
 	queue* L2;
 	queue* L3;
 }MLPQ;
-
 
 typedef struct _scheduler{
 	tcb *runningContext;
@@ -83,23 +84,49 @@ typedef struct _scheduler{
 	my_pthread_mutex_t ** Monitor;
 }scheduler;
 
-typedef struct memoryBlock {
-	
-	struct *memoryBlock;
+typedef struct _memEntry {
 	int size;
-	int isFree;
+	bool isFree;
+	struct _memEntry *next;
 	int magicNum;
-} memblock;
+} memEntry;
+
+typedef struct _PageTableEntry{
+	bool validbit;
+	int physLocation;
+	int swapLocation;
+	int largest_chunk;
+	memEntry* head;
+} PageTableEntry;
+
+typedef struct _SwapBook{
+	tcb* thread;
+	int pageNum;
+	bool isFree;
+} SwapBook;
+
 
 /* define your data structures here: */
 scheduler * Scheduler;
 struct itimerval timer;
-//struct sigaction sa;
+
 
 
 /* Function Declarations: */
-void *myallocate(size_t size, char * file, int line);
 
+/* allocates a block of memory to caller */
+void * myallocate(size_t size, char *file, int line, modebit req);
+
+/* frees a given memory allocation block */
+void mydeallocate(void *ptr, char *file, int line, modebit reg);
+
+/* init a memEntry block */
+void createMemEntry(size_t size, memEntry* pointer);
+
+memEntry* findBestFit(size_t size);
+
+
+/* scheduler run function */
 void schedulerfn();
 
 /* timer init */
@@ -139,6 +166,8 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 #define USE_MY_PTHREAD 1
 
 #ifdef USE_MY_PTHREAD
+#define malloc(x) myallocate(x,__FILE__,__LINE__,THREADREQ)
+#define free(x) mydeallocate(x,__FILE__,__LINE__,THREADREQ)
 #define pthread_create my_pthread_create
 #define pthread_yield my_pthread_yield
 #define pthread_exit my_pthread_exit

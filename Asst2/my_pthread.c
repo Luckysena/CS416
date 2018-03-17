@@ -4,7 +4,7 @@
 
 // name: Mykola Gryshko, Joshua Kim
 // username of iLab: mg1250, jbk91
-// iLab Server: vi.cs.rutgers.edu, factory.cs.rutgers.edu
+// iLab Servers: vi.cs.rutgers.edu, factory.cs.rutgers.edu
 
 #include "my_pthread_t.h"
 #define MEM 64000
@@ -12,13 +12,85 @@
 #define L1THREADS 5
 #define L2THREADS 5
 #define L3THREADS 3
+#define SYSPAGE (sysconf(_SC_PAGE_SIZE))
 
-static char memblock[8000000];
 
+/**********************************
+					MEMORY LIBRARY
+**********************************/
 
-void *myallocate(size_t size, char *file, int line) {
+bool initPage = FALSE;
+memEntry* ptr;
+
+void* myallocate(size_t size, char *file, int line, modebit req) {
+
+	if(size > (SYSPAGE - sizeof(memEntry))) {
+		fprintf(stderr, "error: exceeded 4kb page size\n");
+		return NULL;
+	}
+
+	if(!initPage){
+		createMemEntry(SYSPAGE, ptr);
+		return (void*)(ptr+sizeof(memEntry));
+	}
+
+	return (void*)(findBestFit(size)+sizeof(memEntry));
+}
+
+void mydeallocate(void *ptr, char *file, int line, modebit reg){
 
 }
+
+
+void createMemEntry(size_t size, memEntry* pointer){
+	  // how can we be sure that our next pointers are pointing to memory next to it??
+		if(!initPage){
+			initPage = !initPage;
+			pointer = (memEntry*)memalign(SYSPAGE,SYSPAGE);
+			pointer->size = (size - sizeof(memEntry));
+			pointer->isFree = FALSE;
+			pointer->magicNum = 1409;
+			createMemEntry((SYSPAGE - size - (sizeof(memEntry)*2)),pointer->next);
+			return;
+		}
+
+		pointer->size = size;
+		pointer->isFree = TRUE;
+		pointer->next = NULL;
+		pointer->magicNum = 1409;
+		return;
+}
+
+memEntry* findBestFit(size_t size){
+
+	memEntry *tmp, *best;
+
+	for(tmp = ptr; tmp != NULL; tmp = tmp->next){
+		if((tmp->size >= size) && (tmp->isFree == TRUE)){
+			if(best == NULL){
+				best = tmp;
+				continue;
+			}
+			else if(best->size > tmp->size){
+				best = tmp;
+				continue;
+			}
+		}
+	}
+	size_t overSize = best->size - sizeof(memEntry);
+	if(size < overSize){
+		// usual case where we can create a new mementry following it
+		createMemEntry((overSize - size), best->next);
+	}
+	// otherwise its case where we have not enough space between mementries to create another memEntry
+	return best;
+}
+
+
+/*********************************************
+							THREAD LIBRARY
+*********************************************/
+
 
 int is_scheduler_init = 0;
 tcb* tcbList[33];
@@ -184,8 +256,6 @@ void maintence(){
 	}
 	return;
 }
-
-
 
 void clock_interrupt_handler(){
 
@@ -496,6 +566,11 @@ int my_pthread_mutex_lock(my_pthread_mutex_t *mutex){
 		init_scheduler();
 	}
 
+	if(mutex==NULL){
+		printf("ERROR: mutex is not initialized");
+		return -1;
+	}
+
 
 	if(mutex->owner == NULL){
 		// then continue
@@ -537,6 +612,12 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex){
 	if(!is_scheduler_init){
 		init_scheduler();
 	}
+
+	if(mutex==NULL){
+		printf("ERROR: mutex is not initialized");
+		return -1;
+	}
+
 	//only unlock if its the owner
 	if(mutex->owner->tid == Scheduler->runningContext->tid){
 		__atomic_store_n(&mutex->state, 0, __ATOMIC_SEQ_CST);
@@ -563,6 +644,12 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex){
 	if(!is_scheduler_init){
 		init_scheduler();
 	}
+
+	if(mutex==NULL){
+		printf("ERROR: mutex is not initialized");
+		return -1;
+	}
+
 	//check if mutex is unlocked, this inherently makes sure queue is empty
 	if(mutex->state == 1){
 		return -1;
