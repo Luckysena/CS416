@@ -132,6 +132,7 @@ void createMemEntry(size_t size, memEntry* pointer);
 
 memEntry* findBestFit(size_t size);
 
+void coalesce();
 
 /* scheduler run function */
 void schedulerfn();

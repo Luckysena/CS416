@@ -96,7 +96,8 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 	}
 
 
-	if(/*check if head is init*/ TRUE /* need to change */){
+	// if(/*check if head is init*/ TRUE /* need to change */) {
+	if(ptr == NULL) { // would this work[?] wouldn't an initialized head just not have a value of NULL 
 		createMemEntry(SYSPAGE, ptr);
 		createMemEntry((SYSPAGE - size - (sizeof(memEntry)*2)),ptr->next);
 		return (void*)(ptr+sizeof(memEntry));
@@ -107,12 +108,16 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 
 void mydeallocate(void *ptr, char *file, int line, modebit reg){
 
+	if(ptr = NULL) {
+		fprintf(stderr,"ERROR: invalid free request, null pointer. FILE %s, LINE %d\n",__FILE__,__LINE__);
+	}
+
 }
 
 
 void createMemEntry(size_t size, memEntry* pointer){
 
-			if(pointer == NULL){
+		if(pointer == NULL){
 			pointer->size = (size - sizeof(memEntry));
 			pointer->isFree = FALSE;
 			pointer->magicNum = 1409;
@@ -151,6 +156,13 @@ memEntry* findBestFit(size_t size){
 	return best;
 }
 
+void coalesce(){
+
+	if(ptr == NULL){
+		return;
+	}	
+
+}
 
 /*********************************************
 							THREAD LIBRARY
