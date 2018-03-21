@@ -47,7 +47,6 @@ void init_Mem(){
 		pageTable[i].validbit = TRUE;
 		pageTable[i].OS_entry = TRUE;
 		pageTable[i].physLocation = i;
-		pageTable[i].swapLocation = -1;
 		pageTable[i].tid = -1;
 	}
 
@@ -56,7 +55,6 @@ void init_Mem(){
 		pageTable[i].validbit = TRUE;
 		pageTable[i].OS_entry = FALSE;
 		pageTable[i].physLocation = i;
-		pageTable[i].swapLocation = -1;
 		pageTable[i].tid = -1;
 	}
 
@@ -97,7 +95,7 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 
 
 	// if(/*check if head is init*/ TRUE /* need to change */) {
-	if(ptr == NULL) { // would this work[?] wouldn't an initialized head just not have a value of NULL 
+	if(ptr == NULL) { // would this work[?] wouldn't an initialized head just not have a value of NULL
 		createMemEntry(SYSPAGE, ptr);
 		createMemEntry((SYSPAGE - size - (sizeof(memEntry)*2)),ptr->next);
 		return (void*)(ptr+sizeof(memEntry));
@@ -160,7 +158,7 @@ void coalesce(){
 
 	if(ptr == NULL){
 		return;
-	}	
+	}
 
 }
 

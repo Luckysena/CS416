@@ -99,11 +99,14 @@ typedef struct _PageTableEntry{
 	bool validbit;
 	bool OS_entry;
 	int physLocation;
-	int swapLocation;
-	memEntry* head;
+	void* head;
 	my_pthread_t tid;
 } PageTableEntry;
 
+typedef struct _memBook{
+	int numPages;
+	int physLocation;
+}memBook;
 
 
 /* define your data structures here: */
