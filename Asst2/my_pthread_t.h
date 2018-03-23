@@ -100,19 +100,20 @@ typedef struct _PageTableEntry{
 	bool OS_entry;
 	int physLocation;
 	void* head;
-	my_pthread_t tid;
 } PageTableEntry;
 
 typedef struct _memBook{
-	int numPages;
-	int physLocation;
+	my_pthread_t tid;
+	bool isValid;
 }memBook;
+
 
 
 /* define your data structures here: */
 scheduler* Scheduler;
 struct itimerval timer;
 PageTableEntry pageTable[TOTAL_PAGE_NUM];
+memBook MemBook[TOTAL_PAGE_NUM];
 static void* base_page;
 static void* usr_space;
 
@@ -131,9 +132,9 @@ void * myallocate(size_t size, char *file, int line, modebit req);
 void mydeallocate(void *ptr, char *file, int line, modebit reg);
 
 /* init a memEntry block */
-void createMemEntry(size_t size, memEntry* pointer);
+void createMemEntry(size_t size, void* pointer, int pageTableValue);
 
-memEntry* findBestFit(size_t size);
+memEntry* findBestFit(size_t size, memEntry* ptr);
 
 void coalesce();
 
