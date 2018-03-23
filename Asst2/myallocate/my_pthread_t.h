@@ -23,7 +23,7 @@
 #include <string.h>
 #include <malloc.h>
 #include <signal.h>
-
+#include "myallocate.h"
 
 
 typedef uint my_pthread_t;
@@ -87,53 +87,13 @@ typedef struct _scheduler{
 	my_pthread_mutex_t ** Monitor;
 }scheduler;
 
-typedef struct _memEntry {
-	int size;
-	bool isFree;
-	struct _memEntry *next;
-	struct _memEntry *prev;
-	int magicNum;
-} memEntry;
-
-typedef struct _PageTableEntry{
-	bool validbit;
-	bool OS_entry;
-	int physLocation;
-	int swapLocation;
-	memEntry* head;
-	my_pthread_t tid;
-} PageTableEntry;
-
-
 
 /* define your data structures here: */
 scheduler* Scheduler;
 struct itimerval timer;
-PageTableEntry pageTable[TOTAL_PAGE_NUM];
-static void* base_page;
-static void* usr_space;
-
-// have a static variable to know which thread requested memory allocation 
-static my_pthread_t mid; 
-
-//unsure of this just yet
-static void* swap_space;
-
-
 
 
 /* Function Declarations: */
-
-/* allocates a block of memory to caller */
-void * myallocate(size_t size, char *file, int line, modebit req);
-
-/* frees a given memory allocation block */
-void mydeallocate(void *ptr, char *file, int line, modebit reg);
-
-/* init a memEntry block */
-void createMemEntry(size_t size, memEntry* pointer);
-
-memEntry* findBestFit(size_t size);
 
 /* scheduler run function */
 void schedulerfn();
@@ -171,14 +131,12 @@ int my_pthread_mutex_unlock(my_pthread_mutex_t *mutex);
 /* destroy the mutex */
 int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 
-/* gets tid */
-my_pthread_t gettid();
+/* return my_pthread_t */
+my_pthread_t get_tid();
 
 #define USE_MY_PTHREAD 1
 
 #ifdef USE_MY_PTHREAD
-#define malloc(x) myallocate(x,__FILE__,__LINE__,THREADREQ)
-#define free(x) mydeallocate(x,__FILE__,__LINE__,THREADREQ)
 #define pthread_create my_pthread_create
 #define pthread_yield my_pthread_yield
 #define pthread_exit my_pthread_exit
