@@ -47,8 +47,9 @@ void init_Mem(){
 		pageTable[i].validbit = TRUE;
 		pageTable[i].OS_entry = TRUE;
 		pageTable[i].physLocation = i;
-		pageTable[i].swapLocation = -1;
-		pageTable[i].tid = -1;
+		pageTable[i].head = base_page + (i*SYSPAGE);
+		MemBook[i].tid = 0;
+		MemBook[i].isValid = FALSE;
 	}
 
  	/* USR space */
@@ -56,8 +57,9 @@ void init_Mem(){
 		pageTable[i].validbit = TRUE;
 		pageTable[i].OS_entry = FALSE;
 		pageTable[i].physLocation = i;
-		pageTable[i].swapLocation = -1;
-		pageTable[i].tid = -1;
+		pageTable[i].head = usr_space + (i*SYSPAGE);
+		MemBook[i].tid = -1;
+		MemBook[i].isValid = FALSE;
 	}
 
 	/* signal handler for seg faults */
@@ -80,9 +82,48 @@ void init_Mem(){
 **********************************/
 
 
-memEntry* ptr;
 
+memEntry* getHead(modebit req){
+	// need to return the memEntry struct at the front of a free page
+	int i;
+	if(req == LIBRARYREQ){
+		// the OS requests space
+		for(i = 0; i < OS_PAGE_NUM; i++){
+			// if its initialized
+			if (MemBook[i].isValid == TRUE){
+				return (memEntry*)pageTable[i].head;
+			}
+			//otherwise make it
+			else{
+				createMemEntry(SYSPAGE, pageTable[i].head, i);
+				MemBook[i].isValid == TRUE;
+				return (memEntry*)pageTable[i].head;
+			}
+		}
+		if(i == OS_PAGE_NUM){
+			fprintf(stderr, "ERROR: OS requested space but none left FILE: %s, LINE %d\n", __FILE__, __LINE__);
+			return NULL;
+		}
+	}
+	else{
+		// the user requests space
+		for(i = OS_PAGE_NUM; i < TOTAL_PAGE_NUM; i++){
+			if (MemBook[i].isValid == TRUE){
+				return (memEntry*)pageTable[i].head;
+			}
+			else{
+				createMemEntry(SYSPAGE, pageTable[i].head, i);
+				MemBook[i].isValid == TRUE;
+				return (memEntry*)pageTable[i].head;
+			}
+		}
+		if(i == TOTAL_PAGE_NUM){
+			fprintf(stderr, "ERROR: USR requested space but none left FILE: %s, LINE %d\n", __FILE__, __LINE__);
+			return NULL;
+		}
+	}
 
+}
 
 void* myallocate(size_t size, char *file, int line, modebit req) {
 
@@ -97,15 +138,10 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 		init_Mem();
 	}
 
+	memEntry* ptr = getHead(req);
+	//getHead will always return the first memEntry after making sure its init
 
-	// if(/*check if head is init*/ TRUE /* need to change */) {
-	if(ptr == NULL) { // would this work[?] wouldn't an initialized head just not have a value of NULL 
-		createMemEntry(SYSPAGE, ptr);
-		createMemEntry((SYSPAGE - size - (sizeof(memEntry)*2)),ptr->next);
-		return (void*)(ptr+sizeof(memEntry));
-	}
-
-	return (void*)(findBestFit(size)+sizeof(memEntry));
+	return (void*)(findBestFit(size,ptr)+sizeof(memEntry));
 }
 
 void mydeallocate(void *ptr, char *file, int line, modebit reg){
@@ -117,23 +153,28 @@ void mydeallocate(void *ptr, char *file, int line, modebit reg){
 }
 
 
-void createMemEntry(size_t size, memEntry* pointer){
+void createMemEntry(size_t size, void* pointer, int pageTableValue){
 
-		if(pointer == NULL){
-			pointer->size = (size - sizeof(memEntry));
-			pointer->isFree = FALSE;
-			pointer->magicNum = 1409;
+		memEntry newHead;
+		newHead.magicNum = 1409;
+		newHead.isFree = TRUE;
+		newHead.next = NULL;
+		// this is the case where the page hasnt been init yet
+		if(pageTableValue != -1){
+			//create the struct locally then memcpy it into the location given by pointer
+			newHead.size = (size - sizeof(memEntry));
+			newHead.prev = NULL;
+			memcpy(pointer, &newHead, sizeof(memEntry));
 			return;
 		}
 
-		pointer->size = size;
-		pointer->isFree = TRUE;
-		pointer->next = NULL;
-		pointer->magicNum = 1409;
+		// other case is page has been init and now we need to create the next dude
+		newHead.size = size;
+		memcpy(pointer, &newHead,sizeof(memEntry));
 		return;
 }
 
-memEntry* findBestFit(size_t size){
+memEntry* findBestFit(size_t size, memEntry* ptr){
 
 	memEntry *tmp, *best;
 
@@ -152,17 +193,18 @@ memEntry* findBestFit(size_t size){
 	size_t overSize = best->size - sizeof(memEntry);
 	if(size < overSize){
 		// usual case where we can create a new mementry following it
-		createMemEntry((overSize - size), best->next);
+		createMemEntry((overSize - size), (void*)(best)+size, -1);
+		tmp = (best+size);
+		best->next = tmp;
+		tmp->prev = best;
 	}
+	best->isFree = FALSE;
 	// otherwise its case where we have not enough space between mementries to create another memEntry
 	return best;
 }
 
 void coalesce(){
 
-	if(ptr == NULL){
-		return;
-	}	
 
 }
 
