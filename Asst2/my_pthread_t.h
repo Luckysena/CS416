@@ -114,14 +114,19 @@ scheduler* Scheduler;
 struct itimerval timer;
 PageTableEntry pageTable[TOTAL_PAGE_NUM];
 memBook MemBook[TOTAL_PAGE_NUM];
+
+static char* mem_block;
+static char* swap_space;
+
 static void* base_page;
 static void* usr_space;
+
 
 // have a static variable to know which thread requested memory allocation 
 static my_pthread_t mid; 
 
 //unsure of this just yet
-static void* swap_space;
+//static void* swap_space;
 
 
 

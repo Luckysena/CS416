@@ -34,9 +34,12 @@ static void handler(int sig, siginfo_t *si, void* scrap){
 **********************************/
 
 void init_Mem(){
-	base_page = memalign(SYSPAGE,MEM_SIZE);
-	usr_space = base_page + OS_SIZE;
+	
+	mem_block = (char *)memalign(SYSPAGE,MEM_SIZE * sizeof(char)); 
+	swap_space = (char *)memalign(SYSPAGE,SWAP_SIZE * sizeof(char)); //maybe append swap space to the end of physical memory [?]	
 
+	base_page = (void *)mem_block; //points to the first byte of the OS region
+	usr_space = base_page + OS_SIZE; //points to the first byte of the user region
 
 	/* init page table  */
 	int i;
@@ -118,7 +121,7 @@ memEntry* getHead(modebit req){
 			}
 		}
 		if(i == TOTAL_PAGE_NUM){
-			fprintf(stderr, "ERROR: USR requested space but none left FILE: %s, LINE %d\n", __FILE__, __LINE__);
+			fprintf(stderr, "ERROR: USER requested space but none left FILE: %s, LINE%d\n", __FILE__, __LINE__);
 			return NULL;
 		}
 	}
@@ -132,13 +135,14 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 		return NULL;
 	}
 
-	// added a function that returns the tid; we can use it to traverses the table 
-	// and see if the thread that requested malloc has requested previously
 	if(base_page == NULL){
 		init_Mem();
 	}
 
-	memEntry* ptr = getHead(req);
+	//when there are no more pages left, getHead() returns NULL, thus malloc() should return NULL
+	if((memEntry* ptr = getHead(req)) == NULL) {
+		return NULL;
+	}
 	//getHead will always return the first memEntry after making sure its init
 
 	return (void*)(findBestFit(size,ptr)+sizeof(memEntry));
