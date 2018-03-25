@@ -84,11 +84,17 @@ void init_Mem(){
 					MEMORY LIBRARY
 **********************************/
 
-
-
+//getHead() should be used for deallocation as well
+//if you think this can be done in some other way,
+//just decomment the header
+//
+// 0 == malloc
+// 1 == free
+//memEntry* getHead(modebit req, int flag){
 memEntry* getHead(modebit req){
 	// need to return the memEntry struct at the front of a free page
 	int i;
+
 	if(req == LIBRARYREQ){
 		// the OS requests space
 		for(i = 0; i < OS_PAGE_NUM; i++){
@@ -125,7 +131,7 @@ memEntry* getHead(modebit req){
 			return NULL;
 		}
 	}
-
+		
 }
 
 void* myallocate(size_t size, char *file, int line, modebit req) {
@@ -135,6 +141,8 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 		return NULL;
 	}
 
+	//let's just assume that the base_page has been initialized properly... 
+	//but still need to make sure the 8mb and other pointers are set up correctly
 	if(base_page == NULL){
 		init_Mem();
 	}
@@ -207,8 +215,32 @@ memEntry* findBestFit(size_t size, memEntry* ptr){
 	return best;
 }
 
-void coalesce(){
-
+//coalesce called at the end of free
+//ptr will always start from the head [should use with getHead() function]
+void coalesce(memEntry *ptr){
+	
+	memEntry *tmp, *next, *nnext;
+	for(tmp = ptr; tmp != NULL; tmp = tmp->next) {
+		//there are no other mem entries left in the page, thus no need to coalesce
+		if((next = tmp->next) == NULL) {
+			return;
+		}
+		nnext = next->next; //next of next
+		//if the current mem entry is free, check the next mem entry
+		if((tmp->isFree == TRUE) && (next->isFree == TRUE)) {
+			//if so, then the size of the next mem entry + the size of the meta data is added on
+			tmp->size += next->size + sizeof(memEntry);
+			if((tmp->next = nnext) == NULL) {
+				//end of mem entry list for the page
+				return;
+			} else {
+				nnext->prev = tmp;
+				tmp = ptr; //start from the HEAD again
+			}
+		}	
+	}
+		
+	return;
 
 }
 
