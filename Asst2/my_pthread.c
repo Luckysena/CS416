@@ -34,11 +34,11 @@ static void handler(int sig, siginfo_t *si, void* scrap){
 **********************************/
 
 void init_Mem(){
-	
-	mem_block = (char *)memalign(SYSPAGE,MEM_SIZE * sizeof(char)); 
-	swap_space = (char *)memalign(SYSPAGE,SWAP_SIZE * sizeof(char)); //maybe append swap space to the end of physical memory [?]	
 
-	base_page = (void *)mem_block; //points to the first byte of the OS region
+	mem_block = memalign(SYSPAGE,MEM_SIZE);
+	swap_space = memalign(SYSPAGE,SWAP_SIZE); //maybe append swap space to the end of physical memory [?]
+
+	base_page = mem_block; //points to the first byte of the OS region
 	usr_space = base_page + OS_SIZE; //points to the first byte of the user region
 
 	/* init page table  */
@@ -84,13 +84,6 @@ void init_Mem(){
 					MEMORY LIBRARY
 **********************************/
 
-//getHead() should be used for deallocation as well
-//if you think this can be done in some other way,
-//just decomment the header
-//
-// 0 == malloc
-// 1 == free
-//memEntry* getHead(modebit req, int flag){
 memEntry* getHead(modebit req){
 	// need to return the memEntry struct at the front of a free page
 	int i;
@@ -99,14 +92,16 @@ memEntry* getHead(modebit req){
 		// the OS requests space
 		for(i = 0; i < OS_PAGE_NUM; i++){
 			// if its initialized
-			if (MemBook[i].isValid == TRUE){
-				return (memEntry*)pageTable[i].head;
-			}
-			//otherwise make it
-			else{
-				createMemEntry(SYSPAGE, pageTable[i].head, i);
-				MemBook[i].isValid == TRUE;
-				return (memEntry*)pageTable[i].head;
+			if(pageTable[i].validbit == TRUE){
+				if (MemBook[i].isValid == TRUE){
+					return (memEntry*)pageTable[i].head;
+				}
+				//otherwise make it
+				else{
+					createMemEntry(SYSPAGE, pageTable[i].head, i);
+					MemBook[i].isValid = TRUE;
+					return (memEntry*)pageTable[i].head;
+				}
 			}
 		}
 		if(i == OS_PAGE_NUM){
@@ -117,13 +112,15 @@ memEntry* getHead(modebit req){
 	else{
 		// the user requests space
 		for(i = OS_PAGE_NUM; i < TOTAL_PAGE_NUM; i++){
-			if (MemBook[i].isValid == TRUE){
-				return (memEntry*)pageTable[i].head;
-			}
-			else{
-				createMemEntry(SYSPAGE, pageTable[i].head, i);
-				MemBook[i].isValid == TRUE;
-				return (memEntry*)pageTable[i].head;
+			if(pageTable[i].validbit == TRUE){
+				if (MemBook[i].isValid == TRUE){
+					return (memEntry*)pageTable[i].head;
+				}
+				else{
+					createMemEntry(SYSPAGE, pageTable[i].head, i);
+					MemBook[i].isValid == TRUE;
+					return (memEntry*)pageTable[i].head;
+				}
 			}
 		}
 		if(i == TOTAL_PAGE_NUM){
@@ -131,7 +128,7 @@ memEntry* getHead(modebit req){
 			return NULL;
 		}
 	}
-		
+
 }
 
 void* myallocate(size_t size, char *file, int line, modebit req) {
@@ -141,36 +138,40 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 		return NULL;
 	}
 
-	//let's just assume that the base_page has been initialized properly... 
-	//but still need to make sure the 8mb and other pointers are set up correctly
 	if(base_page == NULL){
 		init_Mem();
 	}
 
+	memEntry* ptr = getHead(req);
 	//when there are no more pages left, getHead() returns NULL, thus malloc() should return NULL
-	if((memEntry* ptr = getHead(req)) == NULL) {
+	if(ptr == NULL) {
 		return NULL;
 	}
 	//getHead will always return the first memEntry after making sure its init
 
-	return (void*)(findBestFit(size,ptr)+sizeof(memEntry));
+	return (((void*)(findBestFit(size,ptr)))+sizeof(memEntry));
 }
 
 void mydeallocate(void *ptr, char *file, int line, modebit reg){
 
-	if(ptr = NULL) {
+	if(ptr == NULL) {
 		fprintf(stderr,"ERROR: invalid free request, null pointer. FILE %s, LINE %d\n",__FILE__,__LINE__);
 	}
 
+	memEntry *memptr = (memEntry*)(ptr - sizeof(memEntry));
+	memset(ptr,0,memptr->size);
+	memptr->isFree = TRUE;
+	memptr->size = 0;
+	coalesce(memptr);
+	return;
 }
-
 
 void createMemEntry(size_t size, void* pointer, int pageTableValue){
 
 		memEntry newHead;
-		newHead.magicNum = 1409;
 		newHead.isFree = TRUE;
 		newHead.next = NULL;
+		newHead.extends = FALSE;
 		// this is the case where the page hasnt been init yet
 		if(pageTableValue != -1){
 			//create the struct locally then memcpy it into the location given by pointer
@@ -181,6 +182,7 @@ void createMemEntry(size_t size, void* pointer, int pageTableValue){
 		}
 
 		// other case is page has been init and now we need to create the next dude
+		newHead.prev = NULL;
 		newHead.size = size;
 		memcpy(pointer, &newHead,sizeof(memEntry));
 		return;
@@ -188,60 +190,80 @@ void createMemEntry(size_t size, void* pointer, int pageTableValue){
 
 memEntry* findBestFit(size_t size, memEntry* ptr){
 
-	memEntry *tmp, *best;
+	void *head = (void*)ptr;
+	memEntry *tmp, *prevtmp;
+	memEntry *best = NULL;
 
 	for(tmp = ptr; tmp != NULL; tmp = tmp->next){
 		if((tmp->size >= size) && (tmp->isFree == TRUE)){
 			if(best == NULL){
 				best = tmp;
+				prevtmp = tmp;
 				continue;
 			}
 			else if(best->size > tmp->size){
 				best = tmp;
+				prevtmp = tmp;
 				continue;
 			}
 		}
+		prevtmp = tmp;
 	}
-	size_t overSize = best->size - sizeof(memEntry);
-	if(size < overSize){
-		// usual case where we can create a new mementry following it
-		createMemEntry((overSize - size), (void*)(best)+size, -1);
-		tmp = (best+size);
-		best->next = tmp;
-		tmp->prev = best;
+
+	//gotta figure out multple pages rn
+	if(best==NULL){
+		best = prevtmp;
+		//case where we need to move it to next page
+		size_t numPagesUsed = ((size - ptr->size)/4096);
+		int i, offset;
+		for(i = 0; i < TOTAL_PAGE_NUM; i++){
+			if(pageTable[i].head == head){
+				offset = i;
+				break;
+			}
+		}
+		for(i = 0; i < numPagesUsed; i++){
+			pageTable[i+offset].validbit = FALSE;
+			if(offset >= OS_PAGE_NUM){
+				MemBook[i+offset].tid = *Scheduler->runningContext->tid;
+			}
+		}
+		best->extends = TRUE;
 	}
+	else{
+		size_t overSize = best->size - sizeof(memEntry);
+		if(size < overSize){
+			// usual case where we can create a new mementry following it
+			createMemEntry((overSize - size), ((void*)(best))+(size+sizeof(memEntry)), -1);
+			tmp = (((void*)(best))+(size+sizeof(memEntry)));
+			memcpy(&best->next,&tmp,sizeof(void*));
+			tmp = (memEntry*)tmp;
+			memcpy(&tmp->prev,&best,sizeof(void*));
+		}
+	}
+
 	best->isFree = FALSE;
 	// otherwise its case where we have not enough space between mementries to create another memEntry
 	return best;
 }
 
-//coalesce called at the end of free
-//ptr will always start from the head [should use with getHead() function]
 void coalesce(memEntry *ptr){
-	
-	memEntry *tmp, *next, *nnext;
-	for(tmp = ptr; tmp != NULL; tmp = tmp->next) {
-		//there are no other mem entries left in the page, thus no need to coalesce
-		if((next = tmp->next) == NULL) {
-			return;
-		}
-		nnext = next->next; //next of next
-		//if the current mem entry is free, check the next mem entry
-		if((tmp->isFree == TRUE) && (next->isFree == TRUE)) {
-			//if so, then the size of the next mem entry + the size of the meta data is added on
-			tmp->size += next->size + sizeof(memEntry);
-			if((tmp->next = nnext) == NULL) {
-				//end of mem entry list for the page
-				return;
-			} else {
-				nnext->prev = tmp;
-				tmp = ptr; //start from the HEAD again
-			}
-		}	
-	}
-		
-	return;
 
+	if(ptr->next != NULL){
+		if(ptr->next->isFree == TRUE){
+			ptr->size = ptr->size + ptr->next->size + sizeof(memEntry);
+			ptr->next = ptr->next->next;
+			memset(ptr->next,0,sizeof(memEntry));
+		}
+	}
+	if(ptr->prev != NULL){
+		if(ptr->prev->isFree == TRUE){
+			ptr->prev->size = ptr->size + ptr->prev->size + sizeof(memEntry);
+			ptr->prev->next = ptr->next;
+			memset(ptr,0,sizeof(memEntry));
+		}
+	}
+	return;
 }
 
 /*********************************************
@@ -261,22 +283,22 @@ tcb* initTCB(my_pthread_t * tid){
 		}
 	}
 
-	tcb* newTCB = (tcb*)malloc(sizeof(tcb));
-	newTCB->context = (ucontext_t*)malloc(sizeof(ucontext_t));   //may need to init stack and flags
+	tcb* newTCB = (tcb*)myallocate(sizeof(tcb),__FILE__,__LINE__,LIBRARYREQ);
+	newTCB->context = (ucontext_t*)myallocate(sizeof(ucontext_t),__FILE__,__LINE__,LIBRARYREQ);   //may need to init stack and flags
 	if(!is_scheduler_init){
 		newTCB->context->uc_link = 0;  //should go to scheduler upon completion, need to work on it
 	}
 	else{
 		newTCB->context->uc_link = Scheduler->mainContext->context;
 	}
-	newTCB->context->uc_stack.ss_sp = malloc(MEM);
+	newTCB->context->uc_stack.ss_sp = myallocate(MEM,__FILE__,__LINE__,LIBRARYREQ);
 	newTCB->context->uc_stack.ss_size = MEM;
 	newTCB->context->uc_stack.ss_flags = 0;
 	getcontext(newTCB->context);
 	newTCB->status = NEW;
 	newTCB->runCount = 0;
 	newTCB->priority = HIGH;
-	newTCB->returnValue = (int*)malloc(sizeof(int));
+	newTCB->returnValue = (int*)myallocate(sizeof(int),__FILE__,__LINE__,LIBRARYREQ);
 
 	for(i = 0; i<33; i++){
 		if(tcbList[i] == NULL){
@@ -291,7 +313,7 @@ tcb* initTCB(my_pthread_t * tid){
 }
 
 queue* initQ(){
-	queue* newQ = (queue*)malloc(sizeof(queue));
+	queue* newQ = (queue*)myallocate(sizeof(queue),__FILE__,__LINE__,LIBRARYREQ);
 	newQ->num_threads = 0;
 	newQ->head = NULL;
 	newQ->tail = NULL;
@@ -349,7 +371,7 @@ tcb* dequeue(queue* qq){
 }
 
 MLPQ* initTasklist(){
-	MLPQ* newMLPQ = (MLPQ*)malloc(sizeof(MLPQ));
+	MLPQ* newMLPQ = (MLPQ*)myallocate(sizeof(MLPQ),__FILE__,__LINE__,LIBRARYREQ);
 	newMLPQ->L1 = initQ();
 	newMLPQ->L2 = initQ();
 	newMLPQ->L3 = initQ();
@@ -359,9 +381,9 @@ MLPQ* initTasklist(){
 
 void init_scheduler(){
 
-	my_pthread_t * INIT = (my_pthread_t*)malloc(sizeof(my_pthread_t));
+	my_pthread_t * INIT = (my_pthread_t*)myallocate(sizeof(my_pthread_t),__FILE__,__LINE__,LIBRARYREQ);
 	*INIT = 0;
-	Scheduler = (scheduler*)malloc(sizeof(scheduler));  //memory for scheduler
+	Scheduler = (scheduler*)myallocate(sizeof(scheduler),__FILE__,__LINE__,LIBRARYREQ);  //memory for scheduler
 	Scheduler->mainContext = initTCB(INIT);
 	Scheduler->runQ = initQ();
 	Scheduler->joinQ = initQ();
@@ -370,12 +392,6 @@ void init_scheduler(){
 	Scheduler->tasklist = initTasklist();
 	Scheduler->runCount = 0;
 	Scheduler->isWait = 0;
-	int i;
-	Scheduler->Monitor = malloc(sizeof(my_pthread_mutex_t)*32);
-	for(i = 0; i<32; i++){
-		Scheduler->Monitor[i] = NULL;
-
-	}
 
 
 	is_scheduler_init = 1;
@@ -396,7 +412,7 @@ void maintence(){
 	if(Scheduler->isWait == 0){
 		for(i = 0; i < Scheduler->terminatedQ->num_threads; i++){
 			tcbList[*Scheduler->terminatedQ->head->tid] = NULL;
-			free(dequeue(Scheduler->terminatedQ));
+			mydeallocate(dequeue(Scheduler->terminatedQ),__FILE__,__LINE__,LIBRARYREQ);
 		}
 	}
 
@@ -702,13 +718,7 @@ int my_pthread_mutex_init(my_pthread_mutex_t *mutex, const pthread_mutexattr_t *
 	if(!is_scheduler_init){
 		init_scheduler();
 	}
-	int i;
-	for(i=0;i<32;i++){
-		if(Scheduler->Monitor[i] == NULL){
-			Scheduler->Monitor[i] = mutex;
-			break;
-		}
-	}
+
 	mutex->mutexQ = initQ();
 	mutex->state = 0;
 	mutex->wait_count = 0;
@@ -813,13 +823,13 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex){
 	}
 
 	//otherwise free it
-	free(mutex->mutexQ);
+	mydeallocate(mutex->mutexQ,__FILE__,__LINE__,LIBRARYREQ);
 
 	return 0;
 };
 
 my_pthread_t gettid() {
-	
-	return Scheduler->runningContext->tid; 
+
+	return *(Scheduler->runningContext->tid);
 
 };

@@ -84,15 +84,14 @@ typedef struct _scheduler{
 	queue * joinQ;
 	int runCount;
 	int isWait;
-	my_pthread_mutex_t ** Monitor;
 }scheduler;
 
 typedef struct _memEntry {
 	int size;
 	bool isFree;
+	bool extends;
 	struct _memEntry *next;
 	struct _memEntry *prev;
-	int magicNum;
 } memEntry;
 
 typedef struct _PageTableEntry{
@@ -122,16 +121,13 @@ static void* base_page;
 static void* usr_space;
 
 
-// have a static variable to know which thread requested memory allocation 
-static my_pthread_t mid; 
-
-//unsure of this just yet
-//static void* swap_space;
-
 
 
 
 /* Function Declarations: */
+
+/* coalesce memEntry structs together after free */
+void coalesce(memEntry* ptr);
 
 /* allocates a block of memory to caller */
 void * myallocate(size_t size, char *file, int line, modebit req);
@@ -184,7 +180,6 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 my_pthread_t gettid();
 
 #define USE_MY_PTHREAD 1
-
 #ifdef USE_MY_PTHREAD
 #define malloc(x) myallocate(x,__FILE__,__LINE__,THREADREQ)
 #define free(x) mydeallocate(x,__FILE__,__LINE__,THREADREQ)
