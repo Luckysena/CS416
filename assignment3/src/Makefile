@@ -150,12 +150,12 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
-ACLOCAL = ${SHELL} /home/ruilin/Downloads/assignment2/missing aclocal-1.14
+ACLOCAL = ${SHELL} /home/nissl/CS416/assignment3/missing aclocal-1.14
 AMTAR = $${TAR-tar}
 AM_DEFAULT_VERBOSITY = 1
-AUTOCONF = ${SHELL} /home/ruilin/Downloads/assignment2/missing autoconf
-AUTOHEADER = ${SHELL} /home/ruilin/Downloads/assignment2/missing autoheader
-AUTOMAKE = ${SHELL} /home/ruilin/Downloads/assignment2/missing automake-1.14
+AUTOCONF = ${SHELL} /home/nissl/CS416/assignment3/missing autoconf
+AUTOHEADER = ${SHELL} /home/nissl/CS416/assignment3/missing autoheader
+AUTOMAKE = ${SHELL} /home/nissl/CS416/assignment3/missing automake-1.14
 AWK = mawk
 CC = gcc
 CCDEPMODE = depmode=gcc3
@@ -170,8 +170,8 @@ ECHO_N = -n
 ECHO_T = 
 EGREP = /bin/grep -E
 EXEEXT = 
-FUSE_CFLAGS = -D_FILE_OFFSET_BITS=64 -I/usr/local/include/fuse  
-FUSE_LIBS = -pthread -L/usr/local/lib -lfuse  
+FUSE_CFLAGS = -I/usr/include/fuse -D_FILE_OFFSET_BITS=64  
+FUSE_LIBS = -lfuse -pthread  
 GREP = /bin/grep
 INSTALL = /usr/bin/install -c
 INSTALL_DATA = ${INSTALL} -m 644
@@ -182,7 +182,7 @@ LDFLAGS =
 LIBOBJS = 
 LIBS = 
 LTLIBOBJS = 
-MAKEINFO = ${SHELL} /home/ruilin/Downloads/assignment2/missing makeinfo
+MAKEINFO = ${SHELL} /home/nissl/CS416/assignment3/missing makeinfo
 MKDIR_P = /bin/mkdir -p
 OBJEXT = o
 PACKAGE = fuse-tutorial
@@ -200,10 +200,10 @@ SET_MAKE =
 SHELL = /bin/bash
 STRIP = 
 VERSION = 2014-06-12
-abs_builddir = /home/ruilin/Downloads/assignment2/src
-abs_srcdir = /home/ruilin/Downloads/assignment2/src
-abs_top_builddir = /home/ruilin/Downloads/assignment2
-abs_top_srcdir = /home/ruilin/Downloads/assignment2
+abs_builddir = /home/nissl/CS416/assignment3/src
+abs_srcdir = /home/nissl/CS416/assignment3/src
+abs_top_builddir = /home/nissl/CS416/assignment3
+abs_top_srcdir = /home/nissl/CS416/assignment3
 ac_ct_CC = gcc
 am__include = include
 am__leading_dot = .
@@ -222,7 +222,7 @@ host_alias =
 htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
-install_sh = ${SHELL} /home/ruilin/Downloads/assignment2/install-sh
+install_sh = ${SHELL} /home/nissl/CS416/assignment3/install-sh
 libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
@@ -243,8 +243,8 @@ top_build_prefix = ../
 top_builddir = ..
 top_srcdir = ..
 sfs_SOURCES = sfs.c  fuse.h  log.c	log.h  params.h  block.c  block.h
-AM_CFLAGS = -D_FILE_OFFSET_BITS=64 -I/usr/local/include/fuse  
-LDADD = -pthread -L/usr/local/lib -lfuse  
+AM_CFLAGS = -I/usr/include/fuse -D_FILE_OFFSET_BITS=64  
+LDADD = -lfuse -pthread  
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
