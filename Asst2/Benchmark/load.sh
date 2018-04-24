@@ -6,5 +6,4 @@ make
 cd Benchmark
 make
 clear
-echo Running vectorMultiply...
-gdb vectorMultiply -q
+gdb parallelCal -q

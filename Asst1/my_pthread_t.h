@@ -132,6 +132,8 @@ int my_pthread_mutex_destroy(my_pthread_mutex_t *mutex);
 #define USE_MY_PTHREAD 1
 
 #ifdef USE_MY_PTHREAD
+#define malloc(x) myallocate(x, __FILE__, __LINE__, THREADREQ)
+#define free(x) mydeallocate(x, __FILE__, __LINE__, THREADREQ)
 #define pthread_create my_pthread_create
 #define pthread_yield my_pthread_yield
 #define pthread_exit my_pthread_exit

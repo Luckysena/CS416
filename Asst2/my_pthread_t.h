@@ -12,6 +12,7 @@
 #define OS_PAGE_NUM 512
 
 /* include lib header files that you need here: */
+#include <sys/mman.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -133,12 +134,12 @@ void coalesce(memEntry* ptr);
 void * myallocate(size_t size, char *file, int line, modebit req);
 
 /* frees a given memory allocation block */
-void mydeallocate(void *ptr, char *file, int line, modebit reg);
+void mydeallocate(void *ptr, char *file, int line, modebit req);
 
 /* init a memEntry block */
 void createMemEntry(size_t size, void* pointer, int pageTableValue);
 
-memEntry* findBestFit(size_t size, memEntry* ptr);
+memEntry* findBestFit(size_t size, memEntry* ptr, modebit req);
 
 /* scheduler run function */
 void schedulerfn();

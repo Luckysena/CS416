@@ -18,6 +18,10 @@ int is_scheduler_init = 0;
 tcb* tcbList[33];
 
 
+
+
+
+
 tcb* initTCB(my_pthread_t * tid){
 	int i;
 	if(!is_scheduler_init){
@@ -178,8 +182,6 @@ void maintence(){
 	}
 	return;
 }
-
-
 
 void clock_interrupt_handler(){
 

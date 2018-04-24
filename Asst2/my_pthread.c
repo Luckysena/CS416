@@ -16,6 +16,7 @@
 #define MEM_SIZE 8388608
 #define OS_SIZE 2097152
 #define SWAP_SIZE 16777216
+int is_scheduler_init = 0;
 
 
 /**********************************
@@ -60,9 +61,10 @@ void init_Mem(){
 		pageTable[i].validbit = TRUE;
 		pageTable[i].OS_entry = FALSE;
 		pageTable[i].physLocation = i;
-		pageTable[i].head = usr_space + (i*SYSPAGE);
+		pageTable[i].head = base_page + (i*SYSPAGE);
 		MemBook[i].tid = -1;
 		MemBook[i].isValid = FALSE;
+		//mprotect(pageTable[i].head,SYSPAGE,PROT_NONE);
 	}
 
 	/* signal handler for seg faults */
@@ -106,7 +108,7 @@ memEntry* getHead(modebit req){
 		}
 		if(i == OS_PAGE_NUM){
 			fprintf(stderr, "ERROR: OS requested space but none left FILE: %s, LINE %d\n", __FILE__, __LINE__);
-			return NULL;
+			exit(EXIT_FAILURE);
 		}
 	}
 	else{
@@ -118,20 +120,21 @@ memEntry* getHead(modebit req){
 				}
 				else{
 					createMemEntry(SYSPAGE, pageTable[i].head, i);
-					MemBook[i].isValid == TRUE;
+					MemBook[i].isValid = TRUE;
 					return (memEntry*)pageTable[i].head;
 				}
 			}
 		}
 		if(i == TOTAL_PAGE_NUM){
 			fprintf(stderr, "ERROR: USER requested space but none left FILE: %s, LINE%d\n", __FILE__, __LINE__);
-			return NULL;
+			exit(EXIT_FAILURE);
 		}
 	}
 
 }
 
 void* myallocate(size_t size, char *file, int line, modebit req) {
+
 
 	if(size <= 0){
 		fprintf(stderr,"ERROR: invalid request, zero or negative value. FILE: %s, LINE %d\n", __FILE__, __LINE__);
@@ -149,10 +152,10 @@ void* myallocate(size_t size, char *file, int line, modebit req) {
 	}
 	//getHead will always return the first memEntry after making sure its init
 
-	return (((void*)(findBestFit(size,ptr)))+sizeof(memEntry));
+	return (((void*)(findBestFit(size,ptr,req)))+sizeof(memEntry));
 }
 
-void mydeallocate(void *ptr, char *file, int line, modebit reg){
+void mydeallocate(void *ptr, char *file, int line, modebit req){
 
 	if(ptr == NULL) {
 		fprintf(stderr,"ERROR: invalid free request, null pointer. FILE %s, LINE %d\n",__FILE__,__LINE__);
@@ -188,7 +191,7 @@ void createMemEntry(size_t size, void* pointer, int pageTableValue){
 		return;
 }
 
-memEntry* findBestFit(size_t size, memEntry* ptr){
+memEntry* findBestFit(size_t size, memEntry* ptr, modebit req){
 
 	void *head = (void*)ptr;
 	memEntry *tmp, *prevtmp;
@@ -215,20 +218,41 @@ memEntry* findBestFit(size_t size, memEntry* ptr){
 		best = prevtmp;
 		//case where we need to move it to next page
 		size_t numPagesUsed = ((size - ptr->size)/4096);
-		int i, offset;
-		for(i = 0; i < TOTAL_PAGE_NUM; i++){
+		int i, offset, limit;
+		if(req == THREADREQ){
+			i = 512;
+			limit = 2048;
+		}
+		else{
+			i = 0;
+			limit = 512;
+		}
+		for(i; i < limit; i++){
 			if(pageTable[i].head == head){
 				offset = i;
 				break;
 			}
 		}
+		if(i == limit){
+			printf("ERROR HEAD WAS NOT FOUND IN PAGE TABLE FOR BEST FIT\n");
+			return NULL;
+		}
 		for(i = 0; i < numPagesUsed; i++){
 			pageTable[i+offset].validbit = FALSE;
-			if(offset >= OS_PAGE_NUM){
-				MemBook[i+offset].tid = *Scheduler->runningContext->tid;
+
+			if(limit >= OS_PAGE_NUM){
+				if(!is_scheduler_init){
+					MemBook[i+offset].tid = 0;
+				}
+				else{
+					MemBook[i+offset].tid = *Scheduler->runningContext->tid;
+				}
 			}
 		}
 		best->extends = TRUE;
+		best->isFree = FALSE;
+		best->size = size;
+		best->next = NULL;
 	}
 	else{
 		size_t overSize = best->size - sizeof(memEntry);
@@ -248,7 +272,7 @@ memEntry* findBestFit(size_t size, memEntry* ptr){
 }
 
 void coalesce(memEntry *ptr){
-
+	//extends will come into play here
 	if(ptr->next != NULL){
 		if(ptr->next->isFree == TRUE){
 			ptr->size = ptr->size + ptr->next->size + sizeof(memEntry);
@@ -271,7 +295,7 @@ void coalesce(memEntry *ptr){
 *********************************************/
 
 
-int is_scheduler_init = 0;
+
 tcb* tcbList[33];
 
 
