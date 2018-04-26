@@ -29,6 +29,82 @@
 
 #include "log.h"
 
+#define BLOCK_SIZE 512       //2^9
+#define FILESIZE 16777216    //2^24
+#define INODE_COUNT 128      //2^7
+#define MAX_FILE_SIZE 8192   //2^13
+#define MAX_DATA_SIZE 1048576 //2^20 = inode * max file size
+#define MAX_INODE_SIZE 65536 //2^16 = inode * 512
+#define MAX_DATA_BLOCKS 16    //2^4 = 8192 / 512
+#define MAX_FILE_NAME 256
+#define DIRECT_INODE_COUNT 16
+#define INDIRECT_INODE_COUNT 3
+#define DOUBLE_INDIRECT_INODE_COUNT 2
+#define INODE_LIST_START 19
+
+//bitmap for data blocks is 16 * 128 * 4 = 8192 bytes so 16 blocks
+//bitmap for inode is 128 * 4 = 512 bytes so 1 block
+//superblock?? just an int?   cap of fsf, next free inode, size of DB
+// superblock is metadata about entire fs check for open/read/write. can tell where next free db is or inode
+// TIMESTAMP !!!!!!!!!!!!!!!!
+
+//init - is it my fs, does it have data,
+//make boot block at block 0 and point to super block and check it.
+
+struct sfs_state* sfsData;
+
+typedef enum _bool{
+  FALSE, TRUE
+}bool;
+
+typedef struct _bootBlock{
+  int magicNum;
+  int isinit;
+  int superBlockIndex;
+  //char bufSpace[500]; //filter space
+}bootBlock;
+
+typedef enum _blockType{
+  ERROR, DIRECTORY, FILES
+}blockType;
+
+// 16 of them
+typedef struct _inode{
+  blockType type;
+  struct stat s;
+  int indexes[MAX_DATA_BLOCKS];
+  char name[MAX_FILE_NAME];
+  //char bufSpace[40];
+}inode;
+
+// 3 of them pointing to 16 ea = 48
+typedef struct _singleIndirectionInode{
+  inode* list;
+}singleIndirectionInode;
+
+// 2 of them pointing to 2 single to 16 ea = 64
+typedef struct _doubleIndirectionInode{
+  singleIndirectionInode* list;
+}doubleIndirectionInode;
+
+typedef struct _dataBlock{
+  int size;
+  char data[BLOCK_SIZE - sizeof(int)];
+}dataBlock;
+
+typedef struct _superBlock{
+  int partitionSize;
+  int blocksize;
+  inode* inodeList;
+  singleIndirectionInode* singleList;
+  doubleIndirectionInode* doubleList;
+  bool* inode_bitmap;
+  bool* data_bitmap;
+  //char bufSpace[464];
+}superBlock;
+
+bootBlock* bBlock;
+superBlock* sBlock;
 
 ///////////////////////////////////////////////////////////
 //
@@ -50,7 +126,131 @@ void *sfs_init(struct fuse_conn_info *conn)
 {
     fprintf(stderr, "in bb-init\n");
     log_msg("\nsfs_init()\n");
+    int i, j ,k;
+    // do i need to load in the values after i restart it?
 
+    // open the disk
+    disk_open(sfsData->diskfile);
+
+    // get boot block information
+    bBlock = (bootBlock*)malloc(sizeof(bootBlock));
+    block_read(0,bBlock);
+
+    if((bBlock->magicNum == 1409) && (bBlock->isinit == 1)){
+      // filesystem is initialized already
+      //everything same as below but block_read()?
+    }
+    else{  // filesystem is not initialized
+
+      //block counter
+      int block_counter = 0;
+
+      //init boot block
+      bBlock->magicNum = 1409;
+      bBlock->superBlockIndex = 1;
+      bBlock->isinit = 1;
+      block_write(block_counter,bBlock);
+      block_counter++;
+
+      //init super block
+      sBlock = (superBlock*)malloc(sizeof(superBlock));
+      sBlock->partitionSize = FILESIZE;
+      sBlock->blocksize = BLOCK_SIZE;
+      sBlock->inodeList = (inode*)malloc(sizeof(inode)*DIRECT_INODE_COUNT);
+      sBlock->inode_bitmap = (bool*)malloc(sizeof(bool)*128);
+      sBlock->data_bitmap = (bool*)malloc(sizeof(bool)*2048);
+      sBlock->singleList = (singleIndirectionInode*)malloc(sizeof(singleIndirectionInode)*INDIRECT_INODE_COUNT);
+      sBlock->doubleList = (doubleIndirectionInode*)malloc(sizeof(doubleIndirectionInode)*DOUBLE_INDIRECT_INODE_COUNT);
+      block_write(block_counter,sBlock);
+      block_counter++;
+
+
+      //init inode bitmap
+      memset(sBlock->inode_bitmap, 0, (sizeof(bool)*128));
+      block_write(block_counter,sBlock->inode_bitmap);
+      block_counter++;
+
+      //init data bitmap
+      memset(sBlock->data_bitmap, 0, (sizeof(bool)*2048));
+      for(block_counter = 3; block_counter < 19; block_counter++){
+          block_write(block_counter,&(sBlock->data_bitmap[((block_counter-3)*512)])); //pls work
+      }
+
+
+      //init direct inodes
+      for(i = block_counter; i < 35; i++){
+        sBlock->inodeList[i].s.st_dev = 0;
+        sBlock->inodeList[i].s.st_ino = 0;
+        sBlock->inodeList[i].s.st_mode = S_IFREG;
+        sBlock->inodeList[i].s.st_nlink = 0;
+        sBlock->inodeList[i].s.st_uid = 0;
+        sBlock->inodeList[i].s.st_gid = 0;
+        sBlock->inodeList[i].s.st_rdev = 0;
+        sBlock->inodeList[i].s.st_size = 0;
+        sBlock->inodeList[i].s.st_blksize = 0;
+        sBlock->inodeList[i].s.st_blocks = 0;
+        sBlock->inodeList[i].s.st_atime = 0;
+        sBlock->inodeList[i].s.st_mtime = 0;
+        sBlock->inodeList[i].s.st_ctime = 0;
+        block_write((i),&(sBlock->inodeList[i]));
+      }
+
+      block_counter = 38;
+
+      //init indirect inodes
+      for(i = 0; i < INDIRECT_INODE_COUNT; i++){
+        sBlock->singleList[i].list = (inode*)malloc(sizeof(inode)*DIRECT_INODE_COUNT);
+        block_write((i+35), &(sBlock->singleList[i]));
+        for(j = 0; j < DIRECT_INODE_COUNT; j++){
+          sBlock->singleList[i].list[j].s.st_dev = 0;
+          sBlock->singleList[i].list[j].s.st_ino = 0;
+          sBlock->singleList[i].list[j].s.st_mode = S_IFREG;
+          sBlock->singleList[i].list[j].s.st_nlink = 0;
+          sBlock->singleList[i].list[j].s.st_uid = 0;
+          sBlock->singleList[i].list[j].s.st_gid = 0;
+          sBlock->singleList[i].list[j].s.st_rdev = 0;
+          sBlock->singleList[i].list[j].s.st_size = 0;
+          sBlock->singleList[i].list[j].s.st_blksize = 0;
+          sBlock->singleList[i].list[j].s.st_blocks = 0;
+          sBlock->singleList[i].list[j].s.st_atime = 0;
+          sBlock->singleList[i].list[j].s.st_mtime = 0;
+          sBlock->singleList[i].list[j].s.st_ctime = 0;
+          block_write(block_counter,&(sBlock->singleList[i].list[j]));
+          block_counter++;
+        }
+      }
+
+      //count is now 88 - beginning of double pointer's single
+      block_counter = 88;
+      int block_counter2 = 92;
+      //init double indirect inodes
+      for(i = 0; i < DOUBLE_INDIRECT_INODE_COUNT;i++){
+        sBlock->doubleList[i].list = (singleIndirectionInode*)malloc(sizeof(singleIndirectionInode)*2);
+        block_write((i+86),&(sBlock->doubleList[i]));
+        for(j = 0; j < 2; j++){
+          sBlock->doubleList[i].list[j].list = (inode*)malloc(sizeof(inode)*DIRECT_INODE_COUNT);
+          block_write(block_counter,&(sBlock->doubleList[i].list[j]));
+          block_counter++;
+          for(k = 0; k < DIRECT_INODE_COUNT; k++){
+            sBlock->doubleList[i].list[j].list[k].s.st_dev = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_ino = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_mode = S_IFREG;
+            sBlock->doubleList[i].list[j].list[k].s.st_nlink = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_uid = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_gid = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_rdev = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_size = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_blksize = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_blocks = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_atime = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_mtime = 0;
+            sBlock->doubleList[i].list[j].list[k].s.st_ctime = 0;
+            block_write(block_counter2,&(sBlock->doubleList[i].list[j].list[k]));
+            block_counter2++;
+          }
+        }
+      }
+    }
     log_conn(conn);
     log_fuse_context(fuse_get_context());
 
