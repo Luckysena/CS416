@@ -41,6 +41,7 @@
 #define INDIRECT_INODE_COUNT 3
 #define DOUBLE_INDIRECT_INODE_COUNT 2
 #define INODE_LIST_START 19
+#define TOTAL_DBLOCK_COUNT 2048 //2^20 / 2^9
 
 //bitmap for data blocks is 16 * 128 * 4 = 8192 bytes so 16 blocks
 //bitmap for inode is 128 * 4 = 512 bytes so 1 block
@@ -72,9 +73,10 @@ typedef enum _blockType{
 typedef struct _inode{
   blockType type;
   struct stat s;
-  int indexes[MAX_DATA_BLOCKS];
+  int* indexes;
+  int size;
   char name[MAX_FILE_NAME];
-  //char bufSpace[40];
+
 }inode;
 
 // 3 of them pointing to 16 ea = 48
@@ -100,7 +102,6 @@ typedef struct _superBlock{
   doubleIndirectionInode* doubleList;
   bool* inode_bitmap;
   bool* data_bitmap;
-  //char bufSpace[464];
 }superBlock;
 
 bootBlock* bBlock;
@@ -112,6 +113,179 @@ superBlock* sBlock;
 // come indirectly from /usr/include/fuse.h
 //
 
+// returns actual block value for inode given a bitmap index and type
+int getBlockVal(int i, bool type){
+
+  if(i < 0){
+    return -1;
+  }
+
+  //FALSE type = inode
+  if(type == FALSE){
+    //direct list
+    if(i < 16){
+      return (i+19);
+    }
+    //single indirect list
+    else if((i > 15) && (i < 64)){
+      return (i+22);
+    }
+    //double indirect list
+    else if((i > 63) && (i<128)){
+      return (i+28);
+    }
+  }
+
+  //TRUE type = data
+  if(type == TRUE){
+
+  }
+}
+
+// returns inode block index given the pathname of the file/dir
+int getBlock(const char* path){
+  int i,len,dataIndex, endIndex, pathIndex = 0;
+  len = 0;
+  // get indexes of the pathname set
+  if((path == NULL) || (strlen(path) == 0)){
+    return -1;
+  }
+
+  if(path[0] == '/'){
+    pathIndex == 1;
+    len++;
+    if(strlen(path) == 1){
+      return -1;
+    }
+  }
+
+  if(path[strlen(path)-1] == '/'){
+    endIndex = strlen(path)-2;
+    len++;
+  }
+  else{
+    endIndex = strlen(path)-1;
+  }
+
+  char* name = (char*)malloc((strlen(path) - len)*sizeof(char));
+
+  // get bitmap to read thru inodes faster
+  bool* inodes = (bool*)malloc(sizeof(bool)*INODE_COUNT);
+  block_read(2,inodes);
+
+
+  inode* tmpInode = (inode*)malloc(sizeof(inode));
+  // traverse inode bitmap for name match
+  for(i = 0; i < INODE_COUNT; i++){
+    if(inodes[i] == TRUE){                 //check if it exists
+      dataIndex = getBlockVal(i,FALSE);    //get actual block index
+      block_read(dataIndex,tmpInode);     //get that shit
+      if(strcmp(tmpInode->name,name) == 0){
+        return i;
+      }
+    }
+  }
+  return -1;
+}
+
+// find the next free inode from the bitmap and returns its index
+int findFreeInode(){
+  // get bitmap to read thru inodes faster
+  bool* inodes = (bool*)malloc(sizeof(bool)*INODE_COUNT);
+  block_read(2,inodes);
+  int i;
+
+  inode* tmpInode = (inode*)malloc(sizeof(inode));
+  // traverse inode bitmap for name match
+  for(i = 0; i < INODE_COUNT; i++){
+    if(inodes[i] == FALSE){                 //check if it is empty
+      return i;    //return block index
+    }
+  }
+  return -1;
+}
+
+// updates inode bitmap
+int updateInodeBitmap(bool type, int block_index){
+
+  bool* inodes = (bool*)malloc(sizeof(bool)*INODE_COUNT);
+  block_read(2,inodes);
+
+  if(type == TRUE){
+    inodes[block_index] = TRUE;
+  }
+  else{
+    inodes[block_index] = FALSE;
+  }
+
+  block_write(2,inodes);
+  return 0;
+
+
+}
+
+//find which first block is free, returns -1 if none
+int findFreeDataBlock(int inode_val, int startBlock){
+    // get inode
+    inode* tmpInode = (inode*)malloc(sizeof(inode));
+    block_read(inode_val,tmpInode);
+
+
+    // get data bitmap
+    bool* dataBlocks = (bool*)malloc(sizeof(bool)*TOTAL_DBLOCK_COUNT);
+    int i, counter = 0;
+    for(i = 3; i < 19; i++){
+      block_read(i,dataBlocks + counter);
+      counter += 512;
+    }
+
+    for(i = startBlock; i < 16; i++){
+      if(dataBlocks[tmpInode->indexes[i]] == FALSE){
+        return tmpInode->indexes[i]; //returns actual value of the dBlock
+      }
+    }
+
+    return -1;
+
+}
+
+
+
+int updateDataBitmap(bool type, int dblock_index){
+  bool* dataBlocks = (bool*)malloc(sizeof(bool)*TOTAL_DBLOCK_COUNT);
+  int i, counter = 0;
+  for(i = 3; i < 19; i++){
+    block_read(i,dataBlocks + counter);
+    counter += 512;
+  }
+
+  if(type == TRUE){
+    dataBlocks[dblock_index] = TRUE;
+  }
+  else{
+    dataBlocks[dblock_index] = FALSE;
+  }
+  counter = 0;
+  for(i = 3; i < 19; i++){
+    block_write(i,dataBlocks + counter);
+    counter += 512;
+  }
+  return 0;
+}
+
+int* getFreeDataBlocks(int inode_index){
+  int* blocks = (int*)malloc(sizeof(int)*16);
+  int i;
+  for(i = 0; i < 16; i++){
+    blocks[i] = (i*16) + 156;
+  }
+  return blocks;
+
+}
+
+int getDblockIndex(int Dblock_val){
+  return (Dblock_val - 156);
+}
 /**
  * Initialize filesystem
  *
@@ -122,8 +296,7 @@ superBlock* sBlock;
  * Introduced in version 2.3
  * Changed in version 2.6
  */
-void *sfs_init(struct fuse_conn_info *conn)
-{
+void *sfs_init(struct fuse_conn_info *conn){
     fprintf(stderr, "in bb-init\n");
     log_msg("\nsfs_init()\n");
     int i, j ,k;
@@ -157,8 +330,8 @@ void *sfs_init(struct fuse_conn_info *conn)
       sBlock->partitionSize = FILESIZE;
       sBlock->blocksize = BLOCK_SIZE;
       sBlock->inodeList = (inode*)malloc(sizeof(inode)*DIRECT_INODE_COUNT);
-      sBlock->inode_bitmap = (bool*)malloc(sizeof(bool)*128);
-      sBlock->data_bitmap = (bool*)malloc(sizeof(bool)*2048);
+      sBlock->inode_bitmap = (bool*)malloc(sizeof(bool)*INODE_COUNT);
+      sBlock->data_bitmap = (bool*)malloc(sizeof(bool)*TOTAL_DBLOCK_COUNT);
       sBlock->singleList = (singleIndirectionInode*)malloc(sizeof(singleIndirectionInode)*INDIRECT_INODE_COUNT);
       sBlock->doubleList = (doubleIndirectionInode*)malloc(sizeof(doubleIndirectionInode)*DOUBLE_INDIRECT_INODE_COUNT);
       block_write(block_counter,sBlock);
@@ -166,12 +339,12 @@ void *sfs_init(struct fuse_conn_info *conn)
 
 
       //init inode bitmap
-      memset(sBlock->inode_bitmap, 0, (sizeof(bool)*128));
+      memset(sBlock->inode_bitmap, 0, (sizeof(bool)*INODE_COUNT));
       block_write(block_counter,sBlock->inode_bitmap);
       block_counter++;
 
       //init data bitmap
-      memset(sBlock->data_bitmap, 0, (sizeof(bool)*2048));
+      memset(sBlock->data_bitmap, 0, (sizeof(bool)*TOTAL_DBLOCK_COUNT));
       for(block_counter = 3; block_counter < 19; block_counter++){
           block_write(block_counter,&(sBlock->data_bitmap[((block_counter-3)*512)])); //pls work
       }
@@ -179,6 +352,7 @@ void *sfs_init(struct fuse_conn_info *conn)
 
       //init direct inodes
       for(i = block_counter; i < 35; i++){
+        sBlock->inodeList[i].size = 0;
         sBlock->inodeList[i].s.st_dev = 0;
         sBlock->inodeList[i].s.st_ino = 0;
         sBlock->inodeList[i].s.st_mode = S_IFREG;
@@ -202,6 +376,7 @@ void *sfs_init(struct fuse_conn_info *conn)
         sBlock->singleList[i].list = (inode*)malloc(sizeof(inode)*DIRECT_INODE_COUNT);
         block_write((i+35), &(sBlock->singleList[i]));
         for(j = 0; j < DIRECT_INODE_COUNT; j++){
+          sBlock->singleList[i].list[j].size = 0;
           sBlock->singleList[i].list[j].s.st_dev = 0;
           sBlock->singleList[i].list[j].s.st_ino = 0;
           sBlock->singleList[i].list[j].s.st_mode = S_IFREG;
@@ -232,6 +407,7 @@ void *sfs_init(struct fuse_conn_info *conn)
           block_write(block_counter,&(sBlock->doubleList[i].list[j]));
           block_counter++;
           for(k = 0; k < DIRECT_INODE_COUNT; k++){
+            sBlock->doubleList[i].list[j].list[k].size = 0;
             sBlock->doubleList[i].list[j].list[k].s.st_dev = 0;
             sBlock->doubleList[i].list[j].list[k].s.st_ino = 0;
             sBlock->doubleList[i].list[j].list[k].s.st_mode = S_IFREG;
@@ -251,6 +427,7 @@ void *sfs_init(struct fuse_conn_info *conn)
         }
       }
     }
+
     log_conn(conn);
     log_fuse_context(fuse_get_context());
 
@@ -264,9 +441,11 @@ void *sfs_init(struct fuse_conn_info *conn)
  *
  * Introduced in version 2.3
  */
-void sfs_destroy(void *userdata)
-{
+void sfs_destroy(void *userdata){
+
+
     log_msg("\nsfs_destroy(userdata=0x%08x)\n", userdata);
+    disk_close(sfsData->diskfile);
 }
 
 /** Get file attributes.
@@ -275,14 +454,37 @@ void sfs_destroy(void *userdata)
  * ignored.  The 'st_ino' field is ignored except if the 'use_ino'
  * mount option is given.
  */
-int sfs_getattr(const char *path, struct stat *statbuf)
-{
-    int retstat = 0;
-    char fpath[PATH_MAX];
-
+int sfs_getattr(const char *path, struct stat *statbuf){
+    // log and init vars
+    int inodeIndex,retstat = 0;
     log_msg("\nsfs_getattr(path=\"%s\", statbuf=0x%08x)\n",
 	  path, statbuf);
 
+    // grab the inode index needed
+    if((inodeIndex = getBlock(path)) == -1){
+      return -1;
+    }
+
+    // read the inode from sfs
+    inode* tmpInode = (inode*)malloc(sizeof(inode));
+    block_read(inodeIndex,tmpInode);
+
+    // fill in statbuf
+    statbuf->st_dev = tmpInode->s.st_dev;
+    statbuf->st_ino = tmpInode->s.st_ino;
+    statbuf->st_mode = tmpInode->s.st_mode;
+    statbuf->st_nlink = tmpInode->s.st_nlink;
+    statbuf->st_uid = tmpInode->s.st_uid;
+    statbuf->st_gid = tmpInode->s.st_gid;
+    statbuf->st_rdev = tmpInode->s.st_rdev;
+    statbuf->st_size = tmpInode->s.st_size;
+    statbuf->st_blksize = tmpInode->s.st_blksize;
+    statbuf->st_blocks = tmpInode->s.st_blocks;
+    statbuf->st_atime = tmpInode->s.st_atime;
+    statbuf->st_mtime = tmpInode->s.st_mtime;
+    statbuf->st_ctime = tmpInode->s.st_ctime;
+
+    free(tmpInode);
     return retstat;
 }
 
@@ -298,21 +500,80 @@ int sfs_getattr(const char *path, struct stat *statbuf)
  *
  * Introduced in version 2.5
  */
-int sfs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
-{
+int sfs_create(const char *path, mode_t mode, struct fuse_file_info *fi){
     int retstat = 0;
-    log_msg("\nsfs_create(path=\"%s\", mode=0%03o, fi=0x%08x)\n",
-	    path, mode, fi);
+
+    if(strlen(path) > MAX_FILE_SIZE){
+      return ENAMETOOLONG;
+    }
+
+    log_msg("\nsfs_create(path=\"%s\", mode=0%03o, fi=0x%08x)\n",path, mode, fi);
 
 
+    int block_index = getBlock(path);
+    if(block_index != -1){
+      retstat = EEXIST;
+    }
+    else{
+      if((block_index = findFreeInode()) == -1){
+        log_msg("no free inodes found\n");
+        return -1;
+      }
+
+      inode* node = (inode*)malloc(sizeof(inode));
+      node->type = FILES;
+      node->s.st_dev = 0;
+      node->s.st_ino = 0;
+      node->s.st_mode = S_IFREG;
+      node->s.st_nlink = 0;
+      node->s.st_uid = getuid();
+      node->s.st_gid = getgid();
+      node->s.st_rdev = 0;
+      node->s.st_size = 0;
+      node->s.st_blksize = 0;
+      node->s.st_blocks = 0;
+      node->s.st_atime = time(NULL);
+      node->s.st_mtime = time(NULL);
+      node->s.st_ctime = time(NULL);
+      strcpy(node->name, path);
+      node->indexes = getFreeDataBlocks(block_index);
+
+      //write the newly created block in
+      int block_val = getBlockVal(block_index, FALSE);
+      block_write(block_val,node);
+
+      //update bitmap
+      updateInodeBitmap(TRUE, block_index);
+
+
+
+    }
     return retstat;
 }
 
 /** Remove a file */
-int sfs_unlink(const char *path)
-{
+int sfs_unlink(const char *path){
     int retstat = 0;
+    if(strlen(path) > MAX_FILE_NAME){
+      return ENAMETOOLONG;
+    }
     log_msg("sfs_unlink(path=\"%s\")\n", path);
+
+    int block_index = getBlock(path);
+    if(block_index == -1){
+      return -1;
+    }
+    int block_val = getBlockVal(block_index,FALSE);
+    inode* node = (inode*)malloc(sizeof(inode));
+    block_read(block_val,node);
+
+    int i;
+    char* emptyData = (char*)malloc((sizeof(char)*BLOCK_SIZE));
+    memset(emptyData, '0', BLOCK_SIZE);
+    for(i = 0; i < 16; i++){
+      block_write(node->indexes[i],emptyData);
+    }
+    updateInodeBitmap(FALSE,block_index);
 
 
     return retstat;
@@ -328,12 +589,21 @@ int sfs_unlink(const char *path)
  *
  * Changed in version 2.2
  */
-int sfs_open(const char *path, struct fuse_file_info *fi)
-{
+int sfs_open(const char *path, struct fuse_file_info *fi){
     int retstat = 0;
-    log_msg("\nsfs_open(path\"%s\", fi=0x%08x)\n",
-	    path, fi);
 
+    log_msg("\nsfs_open(path\"%s\", fi=0x%08x)\n",path, fi);
+
+    if(strlen(path) > MAX_FILE_NAME){
+		    return ENAMETOOLONG;
+    }
+
+    int block_val = getBlock(path);
+
+    if(block_val == -1){
+      log_msg("File does not exist\n");
+      retstat = -ENOENT;
+    }
 
     return retstat;
 }
@@ -352,11 +622,12 @@ int sfs_open(const char *path, struct fuse_file_info *fi)
  *
  * Changed in version 2.2
  */
-int sfs_release(const char *path, struct fuse_file_info *fi)
-{
+int sfs_release(const char *path, struct fuse_file_info *fi){
     int retstat = 0;
-    log_msg("\nsfs_release(path=\"%s\", fi=0x%08x)\n",
-	  path, fi);
+    if(strlen(path) > MAX_FILE_NAME){
+        return ENAMETOOLONG;
+    }
+    log_msg("\nsfs_release(path=\"%s\", fi=0x%08x)\n",path, fi);
 
 
     return retstat;
@@ -373,13 +644,52 @@ int sfs_release(const char *path, struct fuse_file_info *fi)
  *
  * Changed in version 2.2
  */
-int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
-{
+int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi){
     int retstat = 0;
-    log_msg("\nsfs_read(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",
-	    path, buf, size, offset, fi);
+    if(strlen(path) > MAX_FILE_NAME){
+        return ENAMETOOLONG;
+    }
+    log_msg("\nsfs_read(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",path, buf, size, offset, fi);
 
+    int block_index = getBlock(path);
+    if(block_index == -1){
+      log_msg("File does not exist\n");
+      return -ENOENT;
+    }
+    int block_val = getBlockVal(block_index,FALSE);
+    int startBlock = offset / BLOCK_SIZE;
+    int startIndex = offset % BLOCK_SIZE;
+    inode* node = (inode*)malloc(sizeof(inode));
+    char buffer[BLOCK_SIZE];
+    memset(buffer,0,BLOCK_SIZE);
+    block_read(block_val,node);
 
+    if((16*BLOCK_SIZE - node->size) < size){
+      log_msg("Read is out of bounds of file\n");
+      return -1;
+    }
+
+    int bytes = 0;
+
+    while(bytes < size){
+      if(bytes == 0){
+        block_read(node->indexes[startBlock], buffer);
+        memcpy(buf, buffer+startIndex, BLOCK_SIZE - startIndex);
+        bytes += (BLOCK_SIZE - startIndex);
+      }
+      else if( (size - bytes) < BLOCK_SIZE){
+        block_read(node->indexes[startBlock], buffer);
+        memcpy(buf + bytes, buffer, size-bytes);
+        bytes = size;
+      }
+      else{
+        block_read(node->indexes[startBlock], buffer);
+        memcpy(buf + bytes, buffer, BLOCK_SIZE);
+        bytes += BLOCK_SIZE;
+      }
+      startBlock++;
+    }
+    retstat = strlen(buf);
     return retstat;
 }
 
@@ -391,21 +701,51 @@ int sfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse
  *
  * Changed in version 2.2
  */
-int sfs_write(const char *path, const char *buf, size_t size, off_t offset,
-	     struct fuse_file_info *fi)
-{
+int sfs_write(const char *path, const char *buf, size_t size, off_t offset,struct fuse_file_info *fi){
     int retstat = 0;
-    log_msg("\nsfs_write(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",
-	    path, buf, size, offset, fi);
+    if(strlen(path) > MAX_FILE_NAME){
+        return ENAMETOOLONG;
+    }
+    log_msg("\nsfs_write(path=\"%s\", buf=0x%08x, size=%d, offset=%lld, fi=0x%08x)\n",path, buf, size, offset, fi);
 
+    int block_index = getBlock(path);
+    if(block_index == -1){
+      log_msg("File does not exist\n");
+      return -ENOENT;
+    }
+    int block_val = getBlockVal(block_index,FALSE);
+    int startBlock = offset / BLOCK_SIZE;
+    int startIndex = offset % BLOCK_SIZE;
+    inode* node = (inode*)malloc(sizeof(inode));
+    char buffer[BLOCK_SIZE];
+    memset(buffer,0,BLOCK_SIZE);
+    block_read(block_val,node);
 
-    return retstat;
+    //find availible space
+    int i, dblock_val;
+    if((dblock_val = findFreeDataBlock(block_val,startBlock)) == -1){
+      log_msg("Size too big\n");
+      return ENOSPC;
+    }
+
+    // can only make 16 writes then i suppose..
+    int eofBlock = node->indexes[15];
+    int blocksWritten = 0;
+    for(i = dblock_val; i < eofBlock; i++){
+      if(size > (blocksWritten*BLOCK_SIZE)){
+        block_write(i,buf);
+        node->size+= BLOCK_SIZE;
+        updateDataBitmap(FALSE,getDblockIndex(i));
+        blocksWritten++;
+      }
+    }
+
+    return size;
 }
 
 
 /** Create a directory */
-int sfs_mkdir(const char *path, mode_t mode)
-{
+int sfs_mkdir(const char *path, mode_t mode){
     int retstat = 0;
     log_msg("\nsfs_mkdir(path=\"%s\", mode=0%3o)\n",
 	    path, mode);
@@ -416,8 +756,7 @@ int sfs_mkdir(const char *path, mode_t mode)
 
 
 /** Remove a directory */
-int sfs_rmdir(const char *path)
-{
+int sfs_rmdir(const char *path){
     int retstat = 0;
     log_msg("sfs_rmdir(path=\"%s\")\n",
 	    path);
@@ -434,8 +773,7 @@ int sfs_rmdir(const char *path)
  *
  * Introduced in version 2.3
  */
-int sfs_opendir(const char *path, struct fuse_file_info *fi)
-{
+int sfs_opendir(const char *path, struct fuse_file_info *fi){
     int retstat = 0;
     log_msg("\nsfs_opendir(path=\"%s\", fi=0x%08x)\n",
 	  path, fi);
@@ -465,11 +803,17 @@ int sfs_opendir(const char *path, struct fuse_file_info *fi)
  *
  * Introduced in version 2.3
  */
-int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,
-	       struct fuse_file_info *fi)
-{
+int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,struct fuse_file_info *fi){
     int retstat = 0;
+    //filler_t fuse   -  UNCLEAR FUSE FUNCTIONS
+    log_msg("\nsfs_readdir: %s\n", path);
+    char* name = malloc(strlen(path)+1);
+    name[strlen(path)] = '\0';
+    strcpy(name, path);
 
+
+
+    filler(buf, name, NULL, offset);
 
     return retstat;
 }
@@ -478,8 +822,7 @@ int sfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offse
  *
  * Introduced in version 2.3
  */
-int sfs_releasedir(const char *path, struct fuse_file_info *fi)
-{
+int sfs_releasedir(const char *path, struct fuse_file_info *fi){
     int retstat = 0;
 
 
@@ -506,14 +849,12 @@ struct fuse_operations sfs_oper = {
   .releasedir = sfs_releasedir
 };
 
-void sfs_usage()
-{
+void sfs_usage(){
     fprintf(stderr, "usage:  sfs [FUSE and mount options] diskFile mountPoint\n");
     abort();
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]){
     int fuse_stat;
     struct sfs_state *sfs_data;
 
