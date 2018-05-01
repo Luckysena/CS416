@@ -6,10 +6,10 @@
   His code is licensed under the LGPLv2.
 
 */
-#include "config.h"
+//#include "config.h"
 #include "params.h"
 #include "block.h"
-#include "fuse.h"
+//#include "fuse.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
@@ -43,14 +43,6 @@
 #define INODE_LIST_START 19
 #define TOTAL_DBLOCK_COUNT 2048 //2^20 / 2^9
 
-//bitmap for data blocks is 16 * 128 * 4 = 8192 bytes so 16 blocks
-//bitmap for inode is 128 * 4 = 512 bytes so 1 block
-//superblock?? just an int?   cap of fsf, next free inode, size of DB
-// superblock is metadata about entire fs check for open/read/write. can tell where next free db is or inode
-// TIMESTAMP !!!!!!!!!!!!!!!!
-
-//init - is it my fs, does it have data,
-//make boot block at block 0 and point to super block and check it.
 
 struct sfs_state* sfsData;
 
